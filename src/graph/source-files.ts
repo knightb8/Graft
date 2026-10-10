@@ -9,6 +9,7 @@
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { walkDir } from "../ingest/fs.js";
+import { loadGraphIgnore } from "../util/graphignore.js";
 import { relPosix } from "../util/paths.js";
 import { readFollowNestedRepos, readFollowSubmodules, readIncludeDirs } from "../util/state.js";
 import { languageOf, depthExtensions } from "./extract.js";
@@ -73,7 +74,7 @@ export function listSourceFiles(
   // A file is a source file if a depth-tier grammar (languageOf), a breadth-tier
   // grammar (genericLangOf) or a container (containerLangOf) claims its extension.
   // All three must agree here or `build` and `check` would enumerate different sets.
-  return filterByOnlyDirs(
+  const only = filterByOnlyDirs(
     repoFiles.filter(
       (f) =>
         !f.startsWith(outDir) &&
@@ -82,6 +83,9 @@ export function listSourceFiles(
     root,
     onlyDirs,
   );
+  const graphIgnore = loadGraphIgnore(root);
+  if (graphIgnore.size === 0) return only;
+  return only.filter((abs) => !graphIgnore.ignores(relPosix(root, abs)));
 }
 
 export interface SourceStat {

@@ -4,6 +4,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { loadGraphIgnore } from "../util/graphignore.js";
+import { relPosix } from "../util/paths.js";
 
 /** Directories that are dependency/build output, never source. */
 export const SKIP_DIRS = new Set([
@@ -159,7 +161,10 @@ export function walkDir(
   const requested = resolve(dir);
   const root = canonicalWalkRoot(requested);
   const files = gitVisibleFiles(root, includes, opts) ?? walkFilesystem(root, includes);
-  return remapWalkPaths(requested, root, files);
+  const remapped = remapWalkPaths(requested, root, files);
+  const graphIgnore = loadGraphIgnore(requested);
+  if (graphIgnore.size === 0) return remapped;
+  return remapped.filter((abs) => !graphIgnore.ignores(relPosix(requested, abs)));
 }
 
 /** Git's canonical working-tree file set, relative to `dir`. Tracked files are
