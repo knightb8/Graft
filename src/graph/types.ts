@@ -98,7 +98,13 @@ export type Relation =
   | "imports" // file → module
   | "references" // symbol → symbol it names but doesn't call
   | "implements" // TS: class → interface
-  | "extends"; // class → base class
+  | "extends" // class → base class
+  // Tripartite Architecture semantic edges
+  | "influences" // ADR/Doc → Feature/Spec it governs
+  | "covers" // Spec/Feature → Module/Class/Test it covers
+  | "binds" // Spec Step → Step Definition code
+  | "verifies" // Test/Scenario → Production code it tests
+  | "documents"; // Doc/Markdown → Code it explains
 
 export interface EdgeV1 {
   source: string; // node id

@@ -204,6 +204,56 @@ export function resolveEdges(
   for (const e of rawEdges) {
     if (e.relation === "contains" && e.targetId) {
       add(e.source, e.targetId, "contains", "extracted");
+    } else if (e.relation === "documents" && e.specifier) {
+      const hashIdx = e.specifier.indexOf("#");
+      let spec = e.specifier;
+      let hash = "";
+      if (hashIdx >= 0) {
+        hash = e.specifier.slice(hashIdx + 1);
+        spec = e.specifier.slice(0, hashIdx);
+      }
+      let targetFile = e.file;
+      if (spec) {
+        targetFile = resolveImport(spec, e.file, byId);
+      }
+      // If there's a hash, we can try to point to the specific heading node ID
+      // Markdown headings are extracted as `file.md#Heading Text`
+      let target = targetFile;
+      if (hash) {
+        const anchorText = decodeURIComponent(hash).replace(/-/g, " ");
+        // Find if this targetFile has a module node matching anchorText
+        const fileMap = perFileName.get(targetFile);
+        let found = false;
+        if (fileMap) {
+          for (const [name, nodes] of fileMap.entries()) {
+            if (name.toLowerCase() === anchorText.toLowerCase()) {
+              target = nodes[0].id;
+              found = true;
+              break;
+            }
+          }
+        }
+        if (!found) target = `${targetFile}#${anchorText}`;
+      }
+      let rel: Relation = "documents";
+      if (target.includes(".feature")) {
+        rel = "influences";
+      }
+      add(e.source, target, rel, "extracted");
+    } else if (e.targetId) {
+      add(e.source, e.targetId, e.relation, "extracted");
+    } else if (
+      (e.relation === "covers" ||
+        e.relation === "influences" ||
+        e.relation === "binds" ||
+        e.relation === "verifies" ||
+        e.relation === "references" ||
+        e.relation === "documents") &&
+      e.specifier &&
+      !e.name
+    ) {
+      const target = resolveImport(e.specifier, e.file, byId);
+      add(e.source, target, e.relation, "extracted");
     } else if (e.relation === "imports" && e.specifier) {
       const target =
         hasGoModules && e.file.endsWith(".go")
