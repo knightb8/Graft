@@ -400,6 +400,13 @@ program
     (val: string, prev: string[]) => [...prev, val],
     [] as string[],
   )
+  .option(
+    "--exclude-dir <path>",
+    "exclude files under this repo-relative path prefix from indexing — repeatable. Recorded in the graph fingerprint so a later build " +
+      "(and the hooks/refresh path) ignores them as well",
+    (val: string, prev: string[]) => [...prev, val],
+    [] as string[],
+  )
   .option("--no-gitignore", "skip writing graft/ into .gitignore (same as GRAFT_NO_GITIGNORE=1)")
   .option("--no-ignore", "skip writing .ignore for ripgrep re-admit (same as GRAFT_NO_IGNORE=1)")
   .action(async (
@@ -413,6 +420,7 @@ program
       allowPartial?: boolean;
       includeDir?: string[];
       onlyDir?: string[];
+      excludeDir?: string[];
       followSubmodules?: boolean;
       followNestedRepos?: boolean;
       gitignore?: boolean;
@@ -467,6 +475,15 @@ program
         process.exit(1);
       }
       onlyDirs = normalized;
+    }
+    let excludeDirs: string[] | undefined;
+    if (opts.excludeDir && opts.excludeDir.length > 0) {
+      const normalized = opts.excludeDir.map((p) => normalizePathPrefix(p)).filter((p) => p !== "");
+      if (normalized.length === 0) {
+        console.error("✗ --exclude-dir: expected a non-empty repo-relative path");
+        process.exit(1);
+      }
+      excludeDirs = normalized;
     }
     const followSubmodulesWasExplicit = command.getOptionValueSource("followSubmodules") === "cli";
     if (followSubmodulesWasExplicit && typeof opts.followSubmodules === "boolean") {
@@ -527,6 +544,7 @@ program
       const c = await engine.init(dir, {
         extensions: opts.extensions,
         onlyDirs,
+        excludeDirs,
         onProgress: ({ phase, index, total, file }) =>
           process.stderr.write(
             `\r${phase === "summarize" ? "reading" : "writing"} concepts ${index + 1}/${total}: ${file.slice(0, 40).padEnd(40)}`,
@@ -552,6 +570,7 @@ program
       reuse: opts.reuse,
       lsp: opts.lsp,
       onlyDirs,
+      excludeDirs,
       onProgress: ({ phase, index, total, file }) =>
         process.stderr.write(
           `\r${phase === "enrich" ? "summarizing" : "parsing"} ${index + 1}/${total}: ${file.slice(0, 50).padEnd(50)}`,
