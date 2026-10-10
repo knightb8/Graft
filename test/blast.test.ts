@@ -139,11 +139,11 @@ test("blast --base: diffs against the merge base, and reports the ranges it read
 
 test("blast: a changed file no parser claims is reported, never silently dropped", () => {
   const d = builtRepo();
-  writeFileSync(join(d, "README.md"), "# fixture\n\nnow with prose\n");
+  writeFileSync(join(d, "README.txt"), "# fixture\n\nnow with prose\n");
 
   const report = blastJson([d]);
 
-  assert.deepEqual(report.unindexed, ["README.md"]);
+  assert.deepEqual(report.unindexed, ["README.txt"]);
   assert.deepEqual(report.impacted, [], "nothing to walk from an unindexed file");
 });
 

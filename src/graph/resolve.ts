@@ -240,20 +240,6 @@ export function resolveEdges(
         rel = "influences";
       }
       add(e.source, target, rel, "extracted");
-    } else if (e.targetId) {
-      add(e.source, e.targetId, e.relation, "extracted");
-    } else if (
-      (e.relation === "covers" ||
-        e.relation === "influences" ||
-        e.relation === "binds" ||
-        e.relation === "verifies" ||
-        e.relation === "references" ||
-        e.relation === "documents") &&
-      e.specifier &&
-      !e.name
-    ) {
-      const target = resolveImport(e.specifier, e.file, byId);
-      add(e.source, target, e.relation, "extracted");
     } else if (e.relation === "imports" && e.specifier) {
       const target =
         hasGoModules && e.file.endsWith(".go")
