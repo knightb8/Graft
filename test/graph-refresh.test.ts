@@ -480,3 +480,35 @@ test("a process killed while holding the lock releases it", async (t) => {
   assert.equal(signal, "SIGTERM", "and the exit still reports the signal, for whoever is waiting on us");
   assert.equal(code, null);
 });
+
+test("writeCards: prunes orphaned root-level file cards while preserving concept nodes and INDEX.md", async () => {
+  const d = repo();
+  try {
+    writeFileSync(join(d, "README.md"), "# Readme\n\nSome text.\n");
+    writeFileSync(join(d, "scratch.md"), "# Scratch\n\nTemp notes.\n");
+    await buildGraph(d);
+
+    const outDir = outOf(d);
+    assert.ok(existsSync(join(outDir, "README.md")), "README.md card exists");
+    assert.ok(existsSync(join(outDir, "scratch.md")), "scratch.md card exists");
+    assert.ok(existsSync(join(outDir, "INDEX.md")), "INDEX.md exists");
+
+    // Add a manual concept node to graft/
+    writeFileSync(
+      join(outDir, "architecture.md"),
+      "---\nname: Architecture\nslug: architecture\ntype: concept\n---\n# Architecture\n\nCore concept.\n",
+    );
+
+    // Now delete scratch.md from the source repo and rebuild
+    rmSync(join(d, "scratch.md"));
+    await buildGraph(d);
+
+    assert.ok(existsSync(join(outDir, "README.md")), "README.md card still exists");
+    assert.ok(!existsSync(join(outDir, "scratch.md")), "orphaned scratch.md root card was pruned");
+    assert.ok(existsSync(join(outDir, "INDEX.md")), "INDEX.md is preserved");
+    assert.ok(existsSync(join(outDir, "architecture.md")), "manual concept node is preserved");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
