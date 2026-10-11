@@ -58,6 +58,7 @@ export const GENERIC_LANGS: readonly GenericLang[] = [
   { name: "clojure", exts: [".clj", ".cljs", ".cljc", ".bb"], wasm: "clojure" },
   { name: "nix", exts: [".nix"], wasm: "nix" },
   { name: "lua", exts: [".lua"], wasm: "lua" },
+  { name: "markdown", exts: [".md"], wasm: "markdown" },
 ];
 
 const byExt = new Map<string, GenericLang>();
@@ -268,6 +269,7 @@ export function extractGeneric(rel: string, source: string, langName: string): E
       summary_state: "pending", summary: null, crux: null,
     });
     defs.push({ id, startIndex: whole.startIndex, endIndex: whole.endIndex });
+    rawEdges.push({ source: rel, relation: "contains", targetId: id, file: rel });
   };
 
   if (entry.query) {
@@ -281,6 +283,7 @@ export function extractGeneric(rel: string, source: string, langName: string): E
   if (langName === "c" || langName === "cpp") extractIncludes(tree.rootNode as TsNode, rel, rawEdges);
   else if (langName === "rust") extractUses(tree.rootNode as TsNode, rel, rawEdges);
   else if (langName === "php") extractPhpUses(tree.rootNode as TsNode, rel, rawEdges);
+  else if (langName === "markdown") extractMarkdownLinks(source, rel, rawEdges, defs);
   return { nodes, rawEdges };
 }
 
@@ -392,6 +395,7 @@ function tagsExtract(
   const defNameAt = new Set<number>();
   const calls: Array<{ name: string; at: number }> = [];
   const refs: Array<{ name: string; at: number }> = [];
+  const docs: Array<{ name: string; at: number }> = [];
   for (const m of matches) {
     const cap: Record<string, TsNode> = {};
     for (const c of m.captures) cap[c.name] = c.node;
@@ -412,6 +416,8 @@ function tagsExtract(
     if (("reference.class" in cap || "reference.interface" in cap ||
          "reference.implementation" in cap || "reference.module" in cap) && cap.name)
       refs.push({ name: cap.name.text, at: cap.name.startIndex });
+    if ("reference.documents" in cap && cap.name)
+      docs.push({ name: cap.name.text, at: cap.name.startIndex });
   }
   // innermost enclosing definition of a token at byte offset `at`
   const enclosing = (at: number) =>
@@ -428,6 +434,11 @@ function tagsExtract(
     const enc = enclosing(r.at);
     if (!enc) continue; // a reference with no enclosing definition has no sound source
     rawEdges.push({ source: enc.id, relation: "references", file: rel, name: r.name });
+  }
+  for (const d of docs) {
+    if (defNameAt.has(d.at)) continue;
+    const enc = enclosing(d.at);
+    rawEdges.push({ source: enc ? enc.id : rel, relation: "documents", file: rel, name: d.name });
   }
 }
 
@@ -539,4 +550,29 @@ function defScope(node: TsNode, langName?: string): TsNode {
     }
   }
   return n;
+}
+
+/** Markdown links `[text](./path/to.md#Heading)` → `documents` edges.
+ * Tree-Sitter's block parser lumps inline elements into opaque blocks,
+ * so this uses a regex over the source text and attributes matches to
+ * the enclosing heading (if any) or the file node. */
+function extractMarkdownLinks(source: string, rel: string, rawEdges: RawEdge[], defs: Def[]): void {
+  // Rough match for [text](url). Excludes newlines in url, ignores mailto/http.
+  const regex = /\[(?:[^\]\\]|\\.)*\]\(([^)\s]+)\)/g;
+  let match;
+  while ((match = regex.exec(source)) !== null) {
+    const url = match[1].trim();
+    if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("mailto:")) continue;
+
+    const pos = match.index;
+    let sourceId = rel;
+    // Walk defs to find the nearest enclosing heading.
+    // (Defs are recorded sequentially from tree-sitter span iteration).
+    for (const d of defs) {
+      if (pos >= d.startIndex && pos < d.endIndex) {
+        sourceId = d.id;
+      }
+    }
+    rawEdges.push({ source: sourceId, relation: "documents", specifier: url, file: rel });
+  }
 }
