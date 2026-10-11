@@ -4,6 +4,7 @@
  */
 export {
   type TripartiteScope,
+  type ConcreteScope,
   type GraphFilterCriteria,
   scopeOfPath,
   scopeOfNode,

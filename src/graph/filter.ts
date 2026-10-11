@@ -7,9 +7,11 @@
 import type { GraphV1, NodeV1, EdgeV1 } from "./types.js";
 
 export type TripartiteScope = "all" | "code" | "docs" | "specs";
+export type ConcreteScope = "code" | "docs" | "specs";
 
 export interface GraphFilterCriteria {
   scope?: TripartiteScope;
+  scopes?: Set<ConcreteScope> | ConcreteScope[];
   excludeDirs?: string[];
   includeDirs?: string[];
   selectedFiles?: Set<string>;
@@ -69,9 +71,24 @@ export function scopeOfNode(node: FilterableNode): "code" | "docs" | "specs" {
 }
 
 /** Check if a target scope accepts a node scope. */
-export function matchesScope(nodeScope: "code" | "docs" | "specs", targetScope?: TripartiteScope): boolean {
-  if (!targetScope || targetScope === "all") return true;
-  return nodeScope === targetScope;
+export function matchesScope(
+  nodeScope: ConcreteScope,
+  targetScope?: TripartiteScope | Set<ConcreteScope> | ConcreteScope[],
+): boolean {
+  if (!targetScope) return true;
+  if (typeof targetScope === "string") {
+    if (targetScope === "all") return true;
+    return nodeScope === targetScope;
+  }
+  if (targetScope instanceof Set) {
+    if (targetScope.size === 0) return false;
+    return targetScope.has(nodeScope);
+  }
+  if (Array.isArray(targetScope)) {
+    if (targetScope.length === 0) return false;
+    return targetScope.includes(nodeScope);
+  }
+  return true;
 }
 
 /**
@@ -126,7 +143,10 @@ export function matchNodeFilter(node: FilterableNode, criteria?: GraphFilterCrit
   if (!criteria) return true;
 
   // 1. Scope filter
-  if (criteria.scope && criteria.scope !== "all") {
+  if (criteria.scopes !== undefined) {
+    const sc = scopeOfNode(node);
+    if (!matchesScope(sc, criteria.scopes)) return false;
+  } else if (criteria.scope && criteria.scope !== "all") {
     const sc = scopeOfNode(node);
     if (!matchesScope(sc, criteria.scope)) return false;
   }

@@ -60,6 +60,17 @@ test("matchNodeFilter evaluates scope and exclusions together", () => {
   assert.equal(matchNodeFilter(testNode, { scope: "code", excludeDirs: ["test"] }), false);
   assert.equal(matchNodeFilter(docNode, { scope: "code", excludeDirs: ["test"] }), false);
 
+  // Multi-scope checkboxes (scopes Set)
+  const docsAndSpecs = new Set<"code" | "docs" | "specs">(["docs", "specs"]);
+  assert.equal(matchNodeFilter(codeNode, { scopes: docsAndSpecs }), false);
+  assert.equal(matchNodeFilter(docNode, { scopes: docsAndSpecs }), true);
+  assert.equal(matchNodeFilter(specNode, { scopes: docsAndSpecs }), true);
+
+  const codeOnly = new Set<"code" | "docs" | "specs">(["code"]);
+  assert.equal(matchNodeFilter(codeNode, { scopes: codeOnly }), true);
+  assert.equal(matchNodeFilter(docNode, { scopes: codeOnly }), false);
+  assert.equal(matchNodeFilter(specNode, { scopes: codeOnly }), false);
+
   // Selected files set
   const selectedSet = new Set(["src/app.ts", "docs/guide.md"]);
   assert.equal(matchNodeFilter(codeNode, { selectedFiles: selectedSet }), true);

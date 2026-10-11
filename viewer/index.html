@@ -53,10 +53,9 @@
     <div class="filterbar" id="filterBar">
       <div class="filter-group">
         <span class="cap">Scope</span>
-        <button class="echip on" type="button" data-scope="all">all</button>
-        <button class="echip" type="button" data-scope="code"><span class="sw sw-code"></span>code</button>
-        <button class="echip" type="button" data-scope="docs"><span class="sw sw-docs"></span>docs</button>
-        <button class="echip" type="button" data-scope="specs"><span class="sw sw-specs"></span>specs</button>
+        <label class="scope-chip on" title="Toggle Code scope"><input type="checkbox" class="scope-cb" data-scope="code" checked><span class="sw sw-code"></span>code</label>
+        <label class="scope-chip on" title="Toggle Docs scope"><input type="checkbox" class="scope-cb" data-scope="docs" checked><span class="sw sw-docs"></span>docs</label>
+        <label class="scope-chip on" title="Toggle Specs scope"><input type="checkbox" class="scope-cb" data-scope="specs" checked><span class="sw sw-specs"></span>specs</label>
       </div>
       <div class="filter-group">
         <span class="cap">Exclude</span>
@@ -77,10 +76,9 @@
       <div class="filterbar outline-filter" id="outlineFilterBar">
         <div class="filter-group">
           <span class="cap">Scope</span>
-          <button class="echip on" type="button" data-outline-scope="all">all</button>
-          <button class="echip" type="button" data-outline-scope="code"><span class="sw sw-code"></span>code</button>
-          <button class="echip" type="button" data-outline-scope="docs"><span class="sw sw-docs"></span>docs</button>
-          <button class="echip" type="button" data-outline-scope="specs"><span class="sw sw-specs"></span>specs</button>
+          <label class="scope-chip on" title="Toggle Code scope"><input type="checkbox" class="scope-cb" data-outline-scope="code" checked><span class="sw sw-code"></span>code</label>
+          <label class="scope-chip on" title="Toggle Docs scope"><input type="checkbox" class="scope-cb" data-outline-scope="docs" checked><span class="sw sw-docs"></span>docs</label>
+          <label class="scope-chip on" title="Toggle Specs scope"><input type="checkbox" class="scope-cb" data-outline-scope="specs" checked><span class="sw sw-specs"></span>specs</label>
         </div>
         <div class="filter-group">
           <span class="cap">Exclude</span>

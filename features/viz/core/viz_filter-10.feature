@@ -7,10 +7,10 @@ Feature: Scope and Directory Filtering in Visualizer
   Background:
     Given a visualization dataset containing mixed code, doc, and spec nodes across multiple folders
 
-  Scenario: Toggling architectural scope in visualization
-    When the user toggles the scope filter to "docs"
-    Then the visualizer should display only documentation nodes
-    And non-documentation nodes should be hidden from the canvas and counts
+  Scenario: Filtering architectural scopes with multi-select checkboxes
+    When the user selects scopes "docs" and "specs" while unchecking "code"
+    Then the visualizer should display documentation and specification nodes
+    And code nodes should be hidden from the canvas and counts
 
   Scenario: Excluding specific directories in the viewer
     When the user excludes directory "features/" from the view
@@ -20,3 +20,4 @@ Feature: Scope and Directory Filtering in Visualizer
   Scenario: Exporting filtered visualization
     When the user exports the visualizer with scope "code" and excluded directory "test"
     Then the generated static HTML should embed only nodes matching the filter criteria
+

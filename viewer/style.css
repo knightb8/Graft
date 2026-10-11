@@ -83,6 +83,32 @@ svg.graph:active{cursor:grabbing}
 .sw-docs{background:var(--scope-docs)}
 .sw-specs{background:var(--scope-specs)}
 
+.scope-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  border:1px solid var(--border);
+  background:var(--panel);
+  color:var(--muted);
+  border-radius:16px;
+  padding:3px 10px;
+  font:inherit;
+  font-size:11.5px;
+  font-weight:600;
+  cursor:pointer;
+  user-select:none;
+}
+.scope-chip:hover{color:var(--ink)}
+.scope-chip.on{color:var(--ink);border-color:var(--border)}
+.scope-chip:not(.on){opacity:.45}
+.scope-cb{
+  cursor:pointer;
+  margin:0;
+  width:12px;
+  height:12px;
+  accent-color:var(--accent);
+}
+
 .filterbar{position:absolute;top:44px;left:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:85%;z-index:5}
 .filterbar .filter-group{display:flex;align-items:center;gap:5px}
 .filterbar .cap{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:2px}

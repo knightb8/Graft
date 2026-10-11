@@ -4,7 +4,7 @@
  */
 import {
   loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT,
-  colorToken, cvar, famOf, type VizGraph, type TripartiteScope, matchNodeFilter,
+  colorToken, cvar, famOf, type VizGraph, type TripartiteScope, type ConcreteScope, matchNodeFilter,
   scopeOfNode,
 } from "./data.js";
 import { GraphView } from "./graph.js";
@@ -21,14 +21,14 @@ const state = {
   context: null as VizGraph | null,
   code: null as VizGraph | null,
   outlineOpen: {} as Record<string, boolean>,
-  scope: "all" as TripartiteScope,
+  selectedScopes: new Set<ConcreteScope>(["code", "docs", "specs"]),
   excludeDirs: [] as string[],
   selectedFiles: null as Set<string> | null,
 };
 
 function currentFilter() {
   return {
-    scope: state.scope,
+    scopes: state.selectedScopes,
     excludeDirs: state.excludeDirs,
     selectedFiles: state.selectedFiles ?? undefined,
   };
@@ -248,13 +248,23 @@ search.addEventListener("keydown", (ev) => {
 });
 
 /* ---------- scope & directory filtering ---------- */
-function setScope(scope: TripartiteScope): void {
-  state.scope = scope;
-  view.scope = scope;
-  document.querySelectorAll<HTMLButtonElement>("[data-scope], [data-outline-scope]").forEach((b) => {
-    const s = b.dataset.scope ?? b.dataset.outlineScope;
-    b.classList.toggle("on", s === scope);
+function toggleScope(scope: ConcreteScope, enabled: boolean): void {
+  if (enabled) {
+    state.selectedScopes.add(scope);
+  } else {
+    state.selectedScopes.delete(scope);
+  }
+  view.scopes = state.selectedScopes;
+
+  // Sync checkboxes across both canvas and outline filter bars
+  document.querySelectorAll<HTMLInputElement>('input.scope-cb').forEach((cb) => {
+    const s = (cb.dataset.scope ?? cb.dataset.outlineScope) as ConcreteScope;
+    const isChecked = state.selectedScopes.has(s);
+    if (cb.checked !== isChecked) cb.checked = isChecked;
+    const parent = cb.closest(".scope-chip");
+    if (parent) parent.classList.toggle("on", isChecked);
   });
+
   applyFilters();
 }
 
@@ -270,6 +280,7 @@ function setExcluded(raw: string): void {
 }
 
 function applyFilters(): void {
+  view.scopes = state.selectedScopes;
   view.restyle();
   renderChips();
   renderLegend();
@@ -280,11 +291,11 @@ function applyFilters(): void {
   }
 }
 
-document.querySelectorAll<HTMLButtonElement>("[data-scope]").forEach((b) => {
-  b.addEventListener("click", () => setScope((b.dataset.scope as TripartiteScope) || "all"));
-});
-document.querySelectorAll<HTMLButtonElement>("[data-outline-scope]").forEach((b) => {
-  b.addEventListener("click", () => setScope((b.dataset.outlineScope as TripartiteScope) || "all"));
+document.querySelectorAll<HTMLInputElement>("input.scope-cb").forEach((cb) => {
+  cb.addEventListener("change", () => {
+    const s = (cb.dataset.scope ?? cb.dataset.outlineScope) as ConcreteScope;
+    if (s) toggleScope(s, cb.checked);
+  });
 });
 
 $("excludeInput")?.addEventListener("input", (ev) => {

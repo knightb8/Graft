@@ -18,7 +18,7 @@ import {
   type Simulation, type SimulationNodeDatum,
 } from "d3-force";
 import {
-  type VizGraph, type VizEdge, type NodeOwner, type TripartiteScope,
+  type VizGraph, type VizEdge, type NodeOwner, type TripartiteScope, type ConcreteScope,
   famOf, REST, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
 } from "./data.js";
 import { initials } from "./detail.js";
@@ -105,6 +105,7 @@ export class GraphView {
   hiddenRels: Record<string, boolean> = {};
   hiddenTypes: Record<string, boolean> = {};
   scope: TripartiteScope = "all";
+  scopes?: Set<ConcreteScope>;
   excludeDirs: string[] = [];
   selectedFiles?: Set<string>;
   /** The contributor badges on each bubble. A decoration, not a filter — toggling
@@ -319,7 +320,7 @@ export class GraphView {
       !this.hiddenTypes[n.type] &&
       matchNodeFilter(
         { id: n.id, type: n.type, sources: n.sources },
-        { scope: this.scope, excludeDirs: this.excludeDirs, selectedFiles: this.selectedFiles },
+        { scope: this.scope, scopes: this.scopes, excludeDirs: this.excludeDirs, selectedFiles: this.selectedFiles },
       )
     );
   }
