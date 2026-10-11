@@ -16,17 +16,24 @@ test("scopeOfPath correctly identifies code, docs, and specs", () => {
   assert.equal(scopeOfPath("src/cli.ts"), "code");
   assert.equal(scopeOfPath("docs/adr/0001-init.md"), "docs");
   assert.equal(scopeOfPath("README.md"), "docs");
+  // Feature specification files
   assert.equal(scopeOfPath("features/graph/core/semantic_edges-11.feature"), "specs");
   assert.equal(scopeOfPath("features/cli/core/exclude_dir-10.feature"), "specs");
+  // Step implementation files (code scope, distinct from .feature specs)
+  assert.equal(scopeOfPath("features/steps/viewport_capture_steps.py"), "code");
+  assert.equal(scopeOfPath("features/steps/login_steps.ts"), "code");
+  assert.equal(scopeOfPath("test/steps/auth_step.py"), "code");
 });
 
 test("scopeOfNode classifies nodes based on path or sources", () => {
   assert.equal(scopeOfNode({ path: "src/server.ts" }), "code");
   assert.equal(scopeOfNode({ path: "docs/architecture.md" }), "docs");
   assert.equal(scopeOfNode({ path: "features/login.feature" }), "specs");
+  assert.equal(scopeOfNode({ path: "features/steps/login_steps.py" }), "code");
   assert.equal(scopeOfNode({ sources: ["src/index.ts · L1-L10"] }), "code");
   assert.equal(scopeOfNode({ sources: ["docs/readme.md · L5-L20"] }), "docs");
   assert.equal(scopeOfNode({ sources: ["features/test.feature · L1-L15"] }), "specs");
+  assert.equal(scopeOfNode({ sources: ["features/steps/test_steps.py · L1-L20"] }), "code");
 });
 
 test("isPathExcluded handles single-segment and nested directories", () => {

@@ -20,9 +20,11 @@ export interface GraphFilterCriteria {
 /** Check if a file path or node path belongs to a given tripartite scope. */
 export function scopeOfPath(filePath: string): "code" | "docs" | "specs" {
   const normalized = filePath.replace(/\\/g, "/").toLowerCase();
-  if (normalized.endsWith(".feature") || normalized.includes("/features/") || normalized.startsWith("features/")) {
+  // .feature files are specifications
+  if (normalized.endsWith(".feature") || normalized.includes(".feature#")) {
     return "specs";
   }
+  // Markdown files and docs folders are documentation
   if (
     normalized.endsWith(".md") ||
     normalized.endsWith(".markdown") ||
@@ -31,6 +33,7 @@ export function scopeOfPath(filePath: string): "code" | "docs" | "specs" {
   ) {
     return "docs";
   }
+  // All other programming language files (including step definitions like _steps.py, .ts, etc.) are code
   return "code";
 }
 
