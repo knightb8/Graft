@@ -7,9 +7,11 @@
 | **cli** | **core** | 10 | `cli/core/exclude_dir-10.feature` | Exclude Directory CLI Filtering |
 | **graph** | **core** | 13 | `graph/core/graphignore-13.feature` | Persistent File Exclusion via .graphignore |
 | **graph** | **core** | 12 | `graph/core/markdown_ast-12.feature` | Markdown AST Support |
+| **graph** | **core** | 14 | `graph/core/scope_directory_filter-14.feature` | Tripartite Scope and Directory Filtering for Context Graph |
 | **graph** | **core** | 11 | `graph/core/semantic_edges-11.feature` | Tripartite Semantic Edges |
 | **parsing** | **core** | 10 | `parsing/core/gherkin_ast_support-10.feature` | Gherkin AST and Call Graph Extraction |
 | **parsing** | **core** | 13 | `parsing/core/gherkin_file_references-13.feature` | Gherkin File References |
 | **parsing** | **core** | 14 | `parsing/core/gherkin_semantic_links-14.feature` | Gherkin Semantic Links |
 | **parsing** | **core** | 11 | `parsing/core/markdown_ast_support-11.feature` | Markdown AST and Document Structure Extraction |
 | **parsing** | **core** | 12 | `parsing/core/semantic_edges_refinement-12.feature` | Semantic Edge Refinements for Tripartite Architecture |
+| **viz** | **core** | 10 | `viz/core/viz_filter-10.feature` | Scope and Directory Filtering in Visualizer |
