@@ -28,7 +28,9 @@ export function renderOutline(
     const k = kids(pid);
     return k.length + k.reduce((sum, c) => sum + countDesc(c.id), 0);
   };
-  const files = graph.nodes.filter((n) => n.type === "file" && nodeMatches(n));
+  const files = graph.nodes.filter(
+    (n) => (n.type === "file" || (n.type === "module" && n.id.includes(".feature"))) && nodeMatches(n),
+  );
 
   const row = (node: (typeof files)[number]): string => {
     const children = kids(node.id);

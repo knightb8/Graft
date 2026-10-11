@@ -29,9 +29,25 @@ export function extractGherkin(
   if (!gherkinDocument.feature) return { nodes, rawEdges: edges };
   const feature = gherkinDocument.feature;
 
+  // File node container (mirrors extractFile in other languages)
+  const fileNodeId = path;
+  nodes.push({
+    id: fileNodeId,
+    name: path.split("/").pop() ?? path,
+    kind: "file",
+    path: path,
+    span: `L1-L${lines.length}`,
+    signature: null,
+    exported: true,
+    origin: "ast",
+    body_hash: "",
+    summary_state: "pending",
+    summary: null,
+    crux: null,
+  });
+
   // Top level feature node
   const featureId = `${path}#${feature.name}`;
-  const endLine = feature.location.line + 1; // roughly, or just find last line
   nodes.push({
     id: featureId,
     name: feature.name,
@@ -45,6 +61,13 @@ export function extractGherkin(
     summary_state: "pending",
     summary: null,
     crux: null,
+  });
+
+  edges.push({
+    source: fileNodeId,
+    targetId: featureId,
+    relation: "contains",
+    file: path,
   });
 
   // Helper: extract markdown links [text](target)
