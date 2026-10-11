@@ -15,6 +15,7 @@ import { matchesGlob } from "node:path";
 import { toPosixPath } from "./paths.js";
 
 export const GRAPHIGNORE_FILENAME = ".graphignore";
+export const GRAFTIGNORE_FILENAME = ".graftignore";
 
 interface IgnoreRule {
   raw: string;
@@ -132,17 +133,20 @@ export function parseGraphIgnore(content: string): GraphIgnore {
 }
 
 /**
- * Load `.graphignore` from the root of a repo. Returns empty GraphIgnore if missing.
+ * Load `.graphignore` or `.graftignore` from the root of a repo. Returns empty GraphIgnore if missing.
  */
 export function loadGraphIgnore(repoRoot: string): GraphIgnore {
-  const filePath = join(repoRoot, GRAPHIGNORE_FILENAME);
-  if (!existsSync(filePath)) {
-    return new GraphIgnore();
+  const filenames = [GRAPHIGNORE_FILENAME, GRAFTIGNORE_FILENAME];
+  for (const name of filenames) {
+    const filePath = join(repoRoot, name);
+    if (existsSync(filePath)) {
+      try {
+        const content = readFileSync(filePath, "utf8");
+        return parseGraphIgnore(content);
+      } catch {
+        return new GraphIgnore();
+      }
+    }
   }
-  try {
-    const content = readFileSync(filePath, "utf8");
-    return parseGraphIgnore(content);
-  } catch {
-    return new GraphIgnore();
-  }
+  return new GraphIgnore();
 }

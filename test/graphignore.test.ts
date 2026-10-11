@@ -62,3 +62,23 @@ test("walkDir filters out files matching .graphignore", () => {
     rmSync(d, { recursive: true, force: true });
   }
 });
+
+test("walkDir filters out files matching .graftignore as alias", () => {
+  const d = mkdtempSync(join(tmpdir(), "graft-graftignore-test-"));
+  try {
+    mkdirSync(join(d, "src"), { recursive: true });
+    mkdirSync(join(d, "scratch"), { recursive: true });
+
+    writeFileSync(join(d, ".graftignore"), "scratch/\n");
+    writeFileSync(join(d, "src", "index.ts"), "export const ok = 1;\n");
+    writeFileSync(join(d, "scratch", "draft.txt"), "draft\n");
+
+    const files = walkDir(d);
+    const rels = files.map((f) => f.slice(d.length + 1).replace(/\\/g, "/"));
+
+    assert.ok(rels.includes("src/index.ts"), "src/index.ts must be included");
+    assert.ok(!rels.includes("scratch/draft.txt"), "scratch/ must be ignored via .graftignore");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
