@@ -2,7 +2,10 @@
  * graft viz — viewer entry point. Wires tabs, chips, legend, search, theme,
  * SSE live reload, and the three views (Context graph / Code graph / Outline).
  */
-import { loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT, colorToken, cvar, famOf, type VizGraph } from "./data.js";
+import {
+  loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT,
+  colorToken, cvar, famOf, type VizGraph, type TripartiteScope, matchNodeFilter,
+} from "./data.js";
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
 import { renderOutline } from "./tree.js";
@@ -16,7 +19,13 @@ const state = {
   context: null as VizGraph | null,
   code: null as VizGraph | null,
   outlineOpen: {} as Record<string, boolean>,
+  scope: "all" as TripartiteScope,
+  excludeDirs: [] as string[],
 };
+
+function currentFilter() {
+  return { scope: state.scope, excludeDirs: state.excludeDirs };
+}
 
 const view = new GraphView($("graphSvg") as unknown as SVGSVGElement);
 
@@ -114,15 +123,16 @@ function renderLegend(): void {
 function updateShownCount(): void {
   const graph = activeGraph();
   if (!graph) { $("lcount").textContent = ""; return; }
-  const shown = graph.nodes.filter((n) => !view.hiddenTypes[n.type]).length;
+  const shown = graph.nodes.filter((n) => !view.hiddenTypes[n.type] && matchNodeFilter(n, currentFilter())).length;
   $("lcount").textContent = `${shown} / ${graph.nodes.length} nodes shown`;
 }
 
 function updateCounts(): void {
   const el = $("counts");
   if (state.tab === "outline" && state.code) {
-    const files = state.code.nodes.filter((n) => n.type === "file").length;
-    el.textContent = `${files} files · ${state.code.nodes.length} symbols`;
+    const files = state.code.nodes.filter((n) => n.type === "file" && matchNodeFilter(n, currentFilter())).length;
+    const totalSyms = state.code.nodes.filter((n) => matchNodeFilter(n, currentFilter())).length;
+    el.textContent = `${files} files · ${totalSyms} symbols`;
   } else {
     const graph = activeGraph();
     el.textContent = graph ? `${graph.meta.nodeCount} nodes · ${graph.meta.edgeCount} links` : "";
@@ -134,7 +144,7 @@ function showDetail(id: string | null): void {
   renderDetail($("detail"), state.tab === "context" ? state.context : state.code, graphTab(), id, (next) => {
     if (state.tab === "outline") {
       showDetail(next);
-      renderOutline($("tree"), state.code!, next, state.outlineOpen, showDetail);
+      renderOutline($("tree"), state.code!, next, state.outlineOpen, showDetail, currentFilter());
     } else {
       view.focus(next);
     }
@@ -159,7 +169,7 @@ function setTab(tab: Tab): void {
 
   const empty = $("graphEmpty");
   if (tab === "outline") {
-    if (state.code) renderOutline($("tree"), state.code, null, state.outlineOpen, showDetail);
+    if (state.code) renderOutline($("tree"), state.code, null, state.outlineOpen, showDetail, currentFilter());
     else {
       $("outlineView").hidden = true;
       $("canvasWrap").hidden = false;
@@ -215,6 +225,53 @@ search.addEventListener("keydown", (ev) => {
     const hit = view.firstMatch();
     if (hit) view.focus(hit.id);
   }
+});
+
+/* ---------- scope & directory filtering ---------- */
+function setScope(scope: TripartiteScope): void {
+  state.scope = scope;
+  view.scope = scope;
+  document.querySelectorAll<HTMLButtonElement>("[data-scope], [data-outline-scope]").forEach((b) => {
+    const s = b.dataset.scope ?? b.dataset.outlineScope;
+    b.classList.toggle("on", s === scope);
+  });
+  applyFilters();
+}
+
+function setExcluded(raw: string): void {
+  const dirs = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  state.excludeDirs = dirs;
+  view.excludeDirs = dirs;
+  const in1 = $("excludeInput") as HTMLInputElement | null;
+  const in2 = $("outlineExcludeInput") as HTMLInputElement | null;
+  if (in1 && in1.value !== raw) in1.value = raw;
+  if (in2 && in2.value !== raw) in2.value = raw;
+  applyFilters();
+}
+
+function applyFilters(): void {
+  view.restyle();
+  renderChips();
+  renderLegend();
+  updateShownCount();
+  updateCounts();
+  if (state.tab === "outline" && state.code) {
+    renderOutline($("tree"), state.code, view.selected, state.outlineOpen, showDetail, currentFilter());
+  }
+}
+
+document.querySelectorAll<HTMLButtonElement>("[data-scope]").forEach((b) => {
+  b.addEventListener("click", () => setScope((b.dataset.scope as TripartiteScope) || "all"));
+});
+document.querySelectorAll<HTMLButtonElement>("[data-outline-scope]").forEach((b) => {
+  b.addEventListener("click", () => setScope((b.dataset.outlineScope as TripartiteScope) || "all"));
+});
+
+$("excludeInput")?.addEventListener("input", (ev) => {
+  setExcluded((ev.target as HTMLInputElement).value);
+});
+$("outlineExcludeInput")?.addEventListener("input", (ev) => {
+  setExcluded((ev.target as HTMLInputElement).value);
 });
 
 /* ---------- zoom controls ---------- */

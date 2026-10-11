@@ -2,6 +2,15 @@
  * Data layer: fetches both graphs from the graft viz server and carries the
  * edge semantics (verb → family → form) defined in the design spec.
  */
+export {
+  type TripartiteScope,
+  type GraphFilterCriteria,
+  scopeOfPath,
+  scopeOfNode,
+  matchesScope,
+  isPathExcluded,
+  matchNodeFilter,
+} from "../src/graph/filter.js";
 
 export interface VizNode {
   id: string;

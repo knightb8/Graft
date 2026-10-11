@@ -17,13 +17,17 @@ import {
   forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide,
   type Simulation, type SimulationNodeDatum,
 } from "d3-force";
-import { type VizGraph, type VizEdge, type NodeOwner, famOf, REST, chipKey, colorToken, cvar } from "./data.js";
+import {
+  type VizGraph, type VizEdge, type NodeOwner, type TripartiteScope,
+  famOf, REST, chipKey, colorToken, cvar, matchNodeFilter,
+} from "./data.js";
 import { initials } from "./detail.js";
 
 interface SimNode extends SimulationNodeDatum {
   id: string;
   name: string;
   type: string;
+  sources?: string[];
   deg: number;
   r: number;
   owners?: NodeOwner[];
@@ -99,6 +103,8 @@ export class GraphView {
   query = "";
   hiddenRels: Record<string, boolean> = {};
   hiddenTypes: Record<string, boolean> = {};
+  scope: TripartiteScope = "all";
+  excludeDirs: string[] = [];
   /** The contributor badges on each bubble. A decoration, not a filter — toggling
    * it never changes which nodes are on the canvas. */
   showOwners = true;
@@ -148,7 +154,7 @@ export class GraphView {
       const angle = (i / Math.max(1, graph.nodes.length)) * Math.PI * 2;
       const d = deg[n.id] ?? 0;
       return {
-        id: n.id, name: n.name, type: n.type, owners: n.owners,
+        id: n.id, name: n.name, type: n.type, sources: n.sources, owners: n.owners,
         deg: d, r: 11 + Math.min(13, d * 2.6),
         x: p?.x ?? W / 2 + Math.cos(angle) * Math.min(W, H) / 4,
         y: p?.y ?? H / 2 + Math.sin(angle) * Math.min(W, H) / 4,
@@ -236,7 +242,7 @@ export class GraphView {
       }
     }
     const q = this.query.toLowerCase();
-    const nodeShown = (n: SimNode) => !this.hiddenTypes[n.type];
+    const nodeShown = (n: SimNode) => this.isNodeShown(n);
 
     for (const { path, label, edge } of this.edgeEls) {
       const visible = nodeShown(edge.source) && nodeShown(edge.target) && !this.hiddenRels[chipKey(edge.relation)];
@@ -305,9 +311,19 @@ export class GraphView {
     this.select(id);
   }
 
+  isNodeShown(n: SimNode): boolean {
+    return (
+      !this.hiddenTypes[n.type] &&
+      matchNodeFilter(
+        { id: n.id, type: n.type, sources: n.sources },
+        { scope: this.scope, excludeDirs: this.excludeDirs },
+      )
+    );
+  }
+
   firstMatch(): SimNode | undefined {
     const q = this.query.toLowerCase();
-    return this.nodes.find((n) => !this.hiddenTypes[n.type] && n.name.toLowerCase().includes(q));
+    return this.nodes.find((n) => this.isNodeShown(n) && n.name.toLowerCase().includes(q));
   }
 
   private applyView(): void {

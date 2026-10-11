@@ -14,6 +14,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import matter from "gray-matter";
 import type { NodeLink, SourceRef } from "../context/node-file.js";
+import { matchNodeFilter, type GraphFilterCriteria } from "../graph/filter.js";
 
 export interface VizNode {
   id: string;
@@ -129,7 +130,7 @@ function extractSummary(body: string): string {
 }
 
 /** Read a context dir and assemble the render-ready graph document. */
-export function assembleContextGraph(contextDir: string): VizGraph {
+export function assembleContextGraph(contextDir: string, filter?: GraphFilterCriteria): VizGraph {
   const nodes: VizNode[] = [];
   const rawEdges: VizEdge[] = [];
   let skippedFiles = 0;
@@ -145,6 +146,10 @@ export function assembleContextGraph(contextDir: string): VizGraph {
         continue;
       }
       const fm = parsed.data as Record<string, unknown>;
+      if (Object.keys(fm).length === 0 && parsed.content.trimStart().startsWith("---")) {
+        skippedFiles++;
+        continue;
+      }
       const id = String(fm.slug ?? entry.replace(/\.md$/, ""));
       const sources = Array.isArray(fm.sources) ? (fm.sources as SourceRef[]) : [];
       const links = Array.isArray(fm.links) ? (fm.links as NodeLink[]) : [];
@@ -167,17 +172,18 @@ export function assembleContextGraph(contextDir: string): VizGraph {
     }
   }
 
-  const known = new Set(nodes.map((n) => n.id));
+  const filteredNodes = filter ? nodes.filter((n) => matchNodeFilter(n, filter)) : nodes;
+  const known = new Set(filteredNodes.map((n) => n.id));
   const edges = rawEdges.filter((e) => known.has(e.source) && known.has(e.target));
 
   return {
     meta: {
-      nodeCount: nodes.length,
+      nodeCount: filteredNodes.length,
       edgeCount: edges.length,
       skippedFiles,
       droppedEdges: rawEdges.length - edges.length,
     },
-    nodes,
+    nodes: filteredNodes,
     edges,
   };
 }

@@ -28,6 +28,19 @@
   <div class="canvas-wrap" id="canvasWrap">
     <svg class="graph" id="graphSvg" role="img" aria-label="Force-directed graph"></svg>
     <div class="edgestyle" id="edgeChips"><span class="cap">Edges</span></div>
+    <div class="filterbar" id="filterBar">
+      <div class="filter-group">
+        <span class="cap">Scope</span>
+        <button class="echip on" type="button" data-scope="all">all</button>
+        <button class="echip" type="button" data-scope="code">code</button>
+        <button class="echip" type="button" data-scope="docs">docs</button>
+        <button class="echip" type="button" data-scope="specs">specs</button>
+      </div>
+      <div class="filter-group">
+        <span class="cap">Exclude</span>
+        <input id="excludeInput" class="filter-input" type="text" placeholder="e.g. test, vendor…" title="Comma-separated directories to exclude">
+      </div>
+    </div>
     <div class="lcount" id="lcount"></div>
     <div class="legend" id="legend"></div>
     <div class="zoomctl">
@@ -38,7 +51,22 @@
     <div class="emptytab" id="graphEmpty" hidden></div>
   </div>
   <div class="outline" id="outlineView" hidden>
-    <div class="tree" id="tree"></div>
+    <div class="tree-wrap">
+      <div class="filterbar outline-filter" id="outlineFilterBar">
+        <div class="filter-group">
+          <span class="cap">Scope</span>
+          <button class="echip on" type="button" data-outline-scope="all">all</button>
+          <button class="echip" type="button" data-outline-scope="code">code</button>
+          <button class="echip" type="button" data-outline-scope="docs">docs</button>
+          <button class="echip" type="button" data-outline-scope="specs">specs</button>
+        </div>
+        <div class="filter-group">
+          <span class="cap">Exclude</span>
+          <input id="outlineExcludeInput" class="filter-input" type="text" placeholder="e.g. test, vendor…" title="Comma-separated directories to exclude">
+        </div>
+      </div>
+      <div class="tree" id="tree"></div>
+    </div>
   </div>
   <div class="resizer" id="detailResizer" role="separator" aria-orientation="vertical" aria-label="Resize details panel" tabindex="0" title="Drag to resize"></div>
   <aside class="detail" id="detail"><div class="empty">Select a node to view details</div></aside>

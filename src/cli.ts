@@ -769,7 +769,9 @@ program
   .option("--export <dir>", "write one self-contained index.html instead of serving (for CI, GitHub Pages, or a build artifact)")
   .option("--title <text>", "subtitle shown beside the repo name in an exported page (e.g. \"PR #151\")")
   .option("--tabs <list>", "tabs the exported page offers, comma separated: context,code,outline (default: all three)")
-  .action(async (dirArg: string | undefined, opts: { port: string; open: boolean; export?: string; title?: string; tabs?: string }) => {
+  .option("--scope <scope>", "filter by scope: code, docs, specs, or all")
+  .option("--exclude-dir <dirs...>", "exclude directories from visualization")
+  .action(async (dirArg: string | undefined, opts: { port: string; open: boolean; export?: string; title?: string; tabs?: string; scope?: string; excludeDir?: string[] }) => {
     // Flags are checked before the repository is: a typo'd `--tabs` is a mistake
     // in the command the caller just typed, and telling them to go build an index
     // first sends them off to fix the wrong thing.
@@ -791,6 +793,10 @@ program
     }
     const viewerDir = fileURLToPath(new URL("./viewer/", import.meta.url)); // prebuilt
 
+    const filterCriteria = (opts.scope || opts.excludeDir?.length)
+      ? { scope: opts.scope as any, excludeDirs: opts.excludeDir }
+      : undefined;
+
     if (opts.export) {
       const { exportViz } = await import("./viz/export.js");
       const out = exportViz({
@@ -800,6 +806,7 @@ program
         repoName: basename(root),
         subtitle: opts.title,
         tabs,
+        filter: filterCriteria,
       });
       const kb = Math.round(out.bytes / 1024);
       console.log(

@@ -17,9 +17,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assembleContextGraph, type VizGraph } from "./assemble.js";
+import { filterVizGraph, filterGraphV1, type GraphFilterCriteria } from "../graph/filter.js";
+import type { GraphV1 } from "../graph/types.js";
 
 export interface VizExportOptions {
   contextDir: string;
+  /** Filter criteria (scope, excludeDirs, etc.). */
+  filter?: GraphFilterCriteria;
   /** Where index.html, app.js and style.css were bundled (dist/viewer). */
   viewerDir: string;
   /** Directory to write index.html into. Created if absent. */
@@ -101,12 +105,16 @@ export function exportViz(opts: VizExportOptions): VizExportResult {
   const css = readFileSync(join(opts.viewerDir, "style.css"), "utf8");
   const js = readFileSync(join(opts.viewerDir, "app.js"), "utf8");
 
-  const context = opts.contextGraph ?? assembleContextGraph(opts.contextDir);
+  const rawContext = opts.contextGraph ?? assembleContextGraph(opts.contextDir, opts.filter);
+  const context = opts.filter && opts.contextGraph ? filterVizGraph(rawContext, opts.filter) : rawContext;
   const tabs = opts.tabs ?? ["context", "code", "outline"];
   // Both remaining tabs read the wiring graph, so dropping them drops the payload
   // as well — the point of the option, not a side effect of it.
   const wanted = tabs.includes("code") || tabs.includes("outline");
-  const code = wanted ? codeGraph(opts.contextDir) : null;
+  let code = wanted ? codeGraph(opts.contextDir) : null;
+  if (code && opts.filter) {
+    code = filterGraphV1(code as GraphV1, opts.filter);
+  }
 
   // Which tab to open on. The viewer starts on Context, which only a `--deep` build
   // fills: a structural build writes wiring cards (no frontmatter, so nothing to

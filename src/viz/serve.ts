@@ -12,6 +12,7 @@ import { createServer, type Server, type ServerResponse } from "node:http";
 import { readFileSync, existsSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { assembleContextGraph } from "./assemble.js";
+import { filterGraphV1, type GraphFilterCriteria, type TripartiteScope } from "../graph/filter.js";
 
 export interface VizServerOptions {
   contextDir: string;
@@ -58,7 +59,14 @@ export async function startVizServer(opts: VizServerOptions): Promise<VizServer>
   const sseClients = new Set<ServerResponse>();
 
   const server = createServer((req, res) => {
-    const path = (req.url ?? "/").split("?")[0];
+    const parsedUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+    const path = parsedUrl.pathname;
+
+    const rawScope = parsedUrl.searchParams.get("scope");
+    const scope = (rawScope === "code" || rawScope === "docs" || rawScope === "specs" || rawScope === "all") ? (rawScope as TripartiteScope) : undefined;
+    const excludeParams = parsedUrl.searchParams.getAll("exclude").concat(parsedUrl.searchParams.getAll("exclude_dir"));
+    const excludeDirs = excludeParams.length > 0 ? excludeParams.flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean) : undefined;
+    const filterCriteria: GraphFilterCriteria | undefined = (scope || excludeDirs) ? { scope, excludeDirs } : undefined;
 
     const asset = STATIC_FILES[path];
     if (asset) {
@@ -74,7 +82,7 @@ export async function startVizServer(opts: VizServerOptions): Promise<VizServer>
     }
 
     if (path === "/api/context-graph") {
-      const graph = assembleContextGraph(opts.contextDir);
+      const graph = assembleContextGraph(opts.contextDir, filterCriteria);
       sendJson(res, 200, { ...graph, meta: { ...graph.meta, repoName: opts.repoName } });
       return;
     }
@@ -91,7 +99,8 @@ export async function startVizServer(opts: VizServerOptions): Promise<VizServer>
           sendJson(res, 404, { error: "wiring.json has an unsupported version — regenerate with `graft build`" });
           return;
         }
-        sendJson(res, 200, parsed);
+        const result = filterCriteria ? filterGraphV1(parsed, filterCriteria) : parsed;
+        sendJson(res, 200, result);
       } catch {
         sendJson(res, 404, { error: "wiring.json is unreadable — regenerate with `graft build`" });
       }

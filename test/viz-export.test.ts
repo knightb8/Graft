@@ -182,6 +182,21 @@ test("viz export: tabs can be trimmed, and the payload goes with them", () => {
   assert.ok(all.codeNodes > 0 && readFileSync(all.file, "utf8").length > readFileSync(one.file, "utf8").length);
 });
 
+test("viz export: filters nodes and edges when filter criteria is supplied", () => {
+  const ctx = contextDir();
+  const res = exportViz({
+    contextDir: ctx,
+    viewerDir: viewerDir(),
+    outDir: out(),
+    repoName: "demo",
+    filter: { scope: "code" },
+  });
+  // alpha has source src/a.ts (code), beta has no source (docs) -> only alpha remains
+  assert.equal(res.contextNodes, 1);
+  const html = readFileSync(res.file, "utf8");
+  assert.match(html, /"nodeCount":1/);
+});
+
 test("viz --tabs: a bad tab name fails loudly rather than exporting a page missing a tab", () => {
   const run = (args: string[]): { status: number; stderr: string } => {
     try {

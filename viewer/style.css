@@ -75,6 +75,14 @@ svg.graph:active{cursor:grabbing}
 .echip.on{color:var(--ink)}
 .echip:not(.on){opacity:.45}
 
+.filterbar{position:absolute;top:44px;left:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:85%;z-index:5}
+.filterbar .filter-group{display:flex;align-items:center;gap:5px}
+.filterbar .cap{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:2px}
+.filter-input{border:1px solid var(--border);background:var(--panel);color:var(--ink);border-radius:14px;padding:3px 10px;font:inherit;font-size:11.5px;width:150px;outline:none}
+.filter-input:focus{border-color:var(--accent)}
+.tree-wrap{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--panel)}
+.outline-filter{position:static;padding:10px 14px;border-bottom:1px solid var(--border2);max-width:100%}
+
 .legend{position:absolute;left:14px;bottom:14px;display:flex;gap:6px;flex-wrap:wrap;max-width:70%}
 .lchip{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ink);background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:4px 11px;cursor:pointer;user-select:none;font-family:inherit}
 .lchip .sw{width:9px;height:9px;border-radius:50%}

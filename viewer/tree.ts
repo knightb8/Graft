@@ -2,7 +2,7 @@
  * Outline view: the code graph's `contains` hierarchy (file → class → method)
  * as a collapsible tree with kind dots and per-file symbol counts.
  */
-import { type VizGraph, colorToken, cvar } from "./data.js";
+import { type VizGraph, type VizNode, colorToken, cvar, matchNodeFilter, type GraphFilterCriteria } from "./data.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -14,17 +14,21 @@ export function renderOutline(
   selected: string | null,
   openState: Record<string, boolean>,
   onSelect: (id: string) => void,
+  filter?: GraphFilterCriteria,
 ): void {
+  const nodeMatches = (n: { id: string; type: string; sources?: string[] }) =>
+    !filter || matchNodeFilter({ id: n.id, type: n.type, sources: n.sources }, filter);
+
   const kids = (pid: string) =>
     graph.edges
       .filter((e) => e.relation === "contains" && e.source === pid)
       .map((e) => graph.nodes.find((n) => n.id === e.target))
-      .filter((n): n is NonNullable<typeof n> => Boolean(n));
+      .filter((n): n is VizNode => Boolean(n) && nodeMatches(n!));
   const countDesc = (pid: string): number => {
     const k = kids(pid);
     return k.length + k.reduce((sum, c) => sum + countDesc(c.id), 0);
   };
-  const files = graph.nodes.filter((n) => n.type === "file");
+  const files = graph.nodes.filter((n) => n.type === "file" && nodeMatches(n));
 
   const row = (node: (typeof files)[number]): string => {
     const children = kids(node.id);
@@ -50,17 +54,17 @@ export function renderOutline(
       const id = r.dataset.id!;
       if (r.dataset.haskids === "1") {
         openState[id] = openState[id] === false;
-        renderOutline(host, graph, id, openState, onSelect);
+        renderOutline(host, graph, id, openState, onSelect, filter);
       }
       onSelect(id);
     });
   });
   host.querySelector<HTMLButtonElement>('[data-tool="expand"]')?.addEventListener("click", () => {
     for (const key of Object.keys(openState)) delete openState[key];
-    renderOutline(host, graph, selected, openState, onSelect);
+    renderOutline(host, graph, selected, openState, onSelect, filter);
   });
   host.querySelector<HTMLButtonElement>('[data-tool="collapse"]')?.addEventListener("click", () => {
     for (const n of graph.nodes) openState[n.id] = false;
-    renderOutline(host, graph, selected, openState, onSelect);
+    renderOutline(host, graph, selected, openState, onSelect, filter);
   });
 }

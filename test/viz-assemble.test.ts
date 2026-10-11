@@ -63,7 +63,6 @@ test("assembleContextGraph builds nodes and edges from frontmatter", () => {
   const dir = makeContextDir();
   try {
     const g = assembleContextGraph(dir);
-
     assert.equal(g.nodes.length, 2);
     assert.deepEqual(g.nodes.map((n) => n.id).sort(), ["alpha", "beta"]);
 
@@ -102,4 +101,20 @@ test("normalizeRelation maps vague verbs to the closed vocabulary", () => {
   }
   // unknown verbs are kept verbatim (viewer renders them as their own chip)
   assert.equal(normalizeRelation("orchestrates"), "orchestrates");
+});
+
+test("assembleContextGraph filters by scope and directory", () => {
+  const dir = makeContextDir();
+  try {
+    const codeOnly = assembleContextGraph(dir, { scope: "code" });
+    assert.equal(codeOnly.nodes.length, 1);
+    assert.equal(codeOnly.nodes[0].id, "alpha");
+    assert.equal(codeOnly.edges.length, 0); // beta was filtered out, so alpha->beta edge dropped
+
+    const excludeSrc = assembleContextGraph(dir, { excludeDirs: ["src"] });
+    assert.equal(excludeSrc.nodes.length, 1);
+    assert.equal(excludeSrc.nodes[0].id, "beta");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
