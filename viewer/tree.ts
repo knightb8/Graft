@@ -2,7 +2,7 @@
  * Outline view: the code graph's `contains` hierarchy (file → class → method)
  * as a collapsible tree with kind dots and per-file symbol counts.
  */
-import { type VizGraph, type VizNode, colorToken, cvar, matchNodeFilter, type GraphFilterCriteria } from "./data.js";
+import { type VizGraph, type VizNode, colorToken, cvar, matchNodeFilter, type GraphFilterCriteria, scopeOfNode } from "./data.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -36,7 +36,7 @@ export function renderOutline(
     let html = `<button class="tree-row${open ? " open" : ""}${selected === node.id ? " sel" : ""}"` +
       ` data-id="${esc(node.id)}" data-haskids="${children.length ? 1 : 0}">` +
       `<span class="chev">${children.length ? "▶" : ""}</span>` +
-      `<span class="k" style="background:${cvar(colorToken("code", node.type))}"></span>` +
+      `<span class="k" style="background:${cvar(colorToken("code", node.type, scopeOfNode(node)))}"></span>` +
       `<span class="t${node.type === "file" ? " mono" : ""}">${esc(node.name)}</span>` +
       `<span class="badge">${children.length ? countDesc(node.id) + " sym" : esc(node.type)}</span></button>`;
     if (children.length && open) {

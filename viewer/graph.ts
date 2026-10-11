@@ -19,7 +19,7 @@ import {
 } from "d3-force";
 import {
   type VizGraph, type VizEdge, type NodeOwner, type TripartiteScope,
-  famOf, REST, chipKey, colorToken, cvar, matchNodeFilter,
+  famOf, REST, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
 } from "./data.js";
 import { initials } from "./detail.js";
 
@@ -28,6 +28,7 @@ interface SimNode extends SimulationNodeDatum {
   name: string;
   type: string;
   sources?: string[];
+  scope: "code" | "docs" | "specs";
   deg: number;
   r: number;
   owners?: NodeOwner[];
@@ -155,6 +156,7 @@ export class GraphView {
       const d = deg[n.id] ?? 0;
       return {
         id: n.id, name: n.name, type: n.type, sources: n.sources, owners: n.owners,
+        scope: scopeOfNode(n),
         deg: d, r: 11 + Math.min(13, d * 2.6),
         x: p?.x ?? W / 2 + Math.cos(angle) * Math.min(W, H) / 4,
         y: p?.y ?? H / 2 + Math.sin(angle) * Math.min(W, H) / 4,
@@ -284,7 +286,7 @@ export class GraphView {
       let opacity = match ? 1 : 0.22;
       if (this.selected && node.id !== this.selected && !neighbors.has(node.id)) opacity = Math.min(opacity, 0.2);
       group.setAttribute("opacity", String(opacity));
-      const color = cvar(colorToken(this.tab, node.type));
+      const color = cvar(colorToken(this.tab, node.type, node.scope));
       circle.setAttribute("fill", color);
       ring.setAttribute("stroke", color);
       ring.setAttribute("opacity", node.id === this.selected ? "0.55" : "0");

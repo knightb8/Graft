@@ -5,6 +5,7 @@
 import {
   loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT,
   colorToken, cvar, famOf, type VizGraph, type TripartiteScope, matchNodeFilter,
+  scopeOfNode,
 } from "./data.js";
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
@@ -91,7 +92,9 @@ function renderLegend(): void {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "lchip" + (view.hiddenTypes[type] ? " off" : "");
-    chip.innerHTML = `<span class="sw" style="background:${cvar(colorToken(graphTab(), type))}"></span>${type} <span style="color:var(--muted);font-weight:500">${count}</span>`;
+    const sample = graph.nodes.find((n) => n.type === type);
+    const sampleScope = sample ? scopeOfNode(sample) : undefined;
+    chip.innerHTML = `<span class="sw" style="background:${cvar(colorToken(graphTab(), type, sampleScope))}"></span>${type} <span style="color:var(--muted);font-weight:500">${count}</span>`;
     chip.addEventListener("click", () => {
       view.hiddenTypes[type] = !view.hiddenTypes[type];
       renderLegend();

@@ -118,7 +118,21 @@ const CODE_COLORS: Record<string, string> = {
   interface: "--k-iface", type: "--k-type", enum: "--k-enum",
 };
 
-export function colorToken(tab: "context" | "code", type: string): string {
+export function colorToken(
+  tab: "context" | "code",
+  type: string,
+  scope?: "code" | "docs" | "specs",
+): string {
+  if (scope === "specs") return "--scope-specs";
+  if (scope === "docs") {
+    if (tab === "context" && type !== "file" && CONTEXT_COLORS[type]) {
+      return CONTEXT_COLORS[type];
+    }
+    return "--scope-docs";
+  }
+  if (scope === "code") {
+    return (tab === "code" ? CODE_COLORS[type] : CONTEXT_COLORS[type]) ?? "--scope-code";
+  }
   const m = tab === "code" ? CODE_COLORS : CONTEXT_COLORS;
   return m[type] ?? "--edge";
 }
