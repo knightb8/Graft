@@ -20,6 +20,7 @@ import {
 import {
   type VizGraph, type VizEdge, type NodeOwner, type TripartiteScope, type ConcreteScope,
   famOf, REST, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
+  generateTransitiveEdges,
 } from "./data.js";
 import { initials } from "./detail.js";
 
@@ -108,6 +109,8 @@ export class GraphView {
   scopes?: Set<ConcreteScope>;
   excludeDirs: string[] = [];
   selectedFiles?: Set<string>;
+  showTransitive = true;
+  private rawGraph: VizGraph | null = null;
   /** The contributor badges on each bubble. A decoration, not a filter — toggling
    * it never changes which nodes are on the canvas. */
   showOwners = true;
@@ -131,19 +134,22 @@ export class GraphView {
   private ensureMarkers(): void {
     this.defs.textContent = "";
     const chevron = el("marker", { id: "arr", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: "auto-start-reverse" });
-    chevron.appendChild(el("path", { d: "M2,1.5L8.5,5L2,8.5", fill: "none", stroke: cvar("--edge"), "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0.75 }));
+    chevron.appendChild(el("path", { d: "M2,1.5L8.5,5L2,8.5", fill: "none", stroke: cvar("--edge"), "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0.85 }));
     const hollow = el("marker", { id: "arrH", viewBox: "0 0 12 12", refX: 10, refY: 6, markerWidth: 6.5, markerHeight: 6.5, orient: "auto-start-reverse" });
     hollow.appendChild(el("path", { d: "M1.5,1.5L10.5,6L1.5,10.5z", fill: cvar("--canvas"), stroke: cvar("--edge"), "stroke-width": 1.4 }));
+    const transitive = el("marker", { id: "arrTransitive", viewBox: "0 0 12 12", refX: 10, refY: 6, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" });
+    transitive.appendChild(el("path", { d: "M1.5,1.5L10.5,6L1.5,10.5z", fill: cvar("--canvas"), stroke: cvar("--scope-transitive"), "stroke-width": 1.4 }));
     const out = el("marker", { id: "arrOut", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" });
     out.appendChild(el("path", { d: "M1,1L9,5L1,9z", fill: cvar("--fil") }));
     const inn = el("marker", { id: "arrIn", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" });
     inn.appendChild(el("path", { d: "M1,1L9,5L1,9z", fill: cvar("--accent") }));
-    for (const m of [chevron, hollow, out, inn]) this.defs.appendChild(m);
+    for (const m of [chevron, hollow, transitive, out, inn]) this.defs.appendChild(m);
   }
 
   /** Load (or morph into) a new dataset. Nodes keep their positions by id. */
   setData(graph: VizGraph, tab: "context" | "code"): void {
     this.tab = tab;
+    this.rawGraph = graph;
     const prev = new Map(this.nodes.map((n) => [n.id, n]));
     const deg: Record<string, number> = {};
     for (const e of graph.edges) {
@@ -187,9 +193,16 @@ export class GraphView {
     this.restyle();
   }
 
+  private transitiveGroup!: SVGGElement;
+  private transitiveEls: { path: SVGPathElement; a: SimNode; b: SimNode }[] = [];
+
   private buildElements(): void {
     this.ensureMarkers();
     this.viewport.textContent = "";
+    this.transitiveGroup = el("g", { class: "transitive-layer" });
+    this.viewport.appendChild(this.transitiveGroup);
+    this.transitiveEls = [];
+
     this.edgeEls = this.edges.map((edge) => {
       const path = el("path", { fill: "none", "stroke-linecap": "round" });
       const title = el("title", {});
@@ -230,6 +243,15 @@ export class GraphView {
       label.setAttribute("x", String((sx + tx) / 2 - uy * 14));
       label.setAttribute("y", String((sy + ty) / 2 + ux * 14));
     }
+    for (const { path, a, b } of this.transitiveEls) {
+      const dx = (b.x ?? 0) - (a.x ?? 0), dy = (b.y ?? 0) - (a.y ?? 0);
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const ux = dx / d, uy = dy / d;
+      const sx = (a.x ?? 0) + ux * (a.r + 2), sy = (a.y ?? 0) + uy * (a.r + 2);
+      const tx = (b.x ?? 0) - ux * (b.r + 6), ty = (b.y ?? 0) - uy * (b.r + 6);
+      const mx = (sx + tx) / 2 - uy * 12, my = (sy + ty) / 2 + ux * 12;
+      path.setAttribute("d", `M${sx},${sy} Q${mx},${my} ${tx},${ty}`);
+    }
     for (const { group, node } of this.nodeEls) {
       group.setAttribute("transform", `translate(${node.x ?? 0},${node.y ?? 0})`);
     }
@@ -248,19 +270,76 @@ export class GraphView {
     const q = this.query.toLowerCase();
     const nodeShown = (n: SimNode) => this.isNodeShown(n);
 
+    // Dynamic transitive shortcut edges between visible nodes across hidden intermediaries
+    if (this.transitiveGroup) {
+      this.transitiveGroup.textContent = "";
+      this.transitiveEls = [];
+
+      if (this.showTransitive && this.rawGraph) {
+        const byId = new Map(this.nodes.map((n) => [n.id, n]));
+        const transEdges = generateTransitiveEdges(
+          this.rawGraph.edges,
+          (id) => {
+            const node = byId.get(id);
+            return node ? nodeShown(node) : false;
+          },
+        );
+
+        for (const te of transEdges) {
+          const a = byId.get(te.source);
+          const b = byId.get(te.target);
+          if (!a || !b) continue;
+
+          if (this.selected && a.id === this.selected) neighbors.add(b.id);
+          if (this.selected && b.id === this.selected) neighbors.add(a.id);
+
+          const path = el("path", {
+            fill: "none",
+            "stroke-linecap": "round",
+            stroke: cvar("--scope-transitive"),
+            "stroke-width": "1.6",
+            "stroke-dasharray": "4 4",
+            opacity: "0.75",
+            "marker-end": "url(#arrTransitive)",
+          });
+          const title = el("title", {});
+          title.textContent = `transitive shortcut (via ${te.via.join(" \u2192 ")})`;
+          path.appendChild(title);
+
+          const role = this.selected
+            ? (a.id === this.selected ? "out" : b.id === this.selected ? "in" : "far")
+            : "none";
+          if (role === "out") {
+            path.setAttribute("stroke", cvar("--fil"));
+            path.setAttribute("opacity", "0.95");
+            path.setAttribute("stroke-width", "2.2");
+          } else if (role === "in") {
+            path.setAttribute("stroke", cvar("--accent"));
+            path.setAttribute("opacity", "0.95");
+            path.setAttribute("stroke-width", "2.2");
+          } else if (role === "far") {
+            path.setAttribute("opacity", "0.08");
+          }
+
+          this.transitiveGroup.appendChild(path);
+          this.transitiveEls.push({ path, a, b });
+        }
+      }
+    }
+
     for (const { path, label, edge } of this.edgeEls) {
       const visible = nodeShown(edge.source) && nodeShown(edge.target) && !this.hiddenRels[chipKey(edge.relation)];
       path.style.display = visible ? "" : "none";
       label.setAttribute("display", "none");
       if (!visible) continue;
       const fam = famOf(edge.relation);
-      let stroke = cvar("--edge"), width = 1.3, dash = "none", opacity = 0.5, marker = "url(#arr)";
-      if (fam === "structure") { width = 2.4; opacity = 0.32; marker = "none"; }
-      else if (fam === "dependency") { width = 1.5; opacity = 0.55; }
-      else if (fam === "contract") { opacity = 0.55; marker = "url(#arrH)"; }
-      else { dash = "2 5"; width = 1.2; opacity = 0.28; marker = "none"; }
+      let stroke = cvar("--edge"), width = 1.6, dash = "none", opacity = 0.72, marker = "url(#arr)";
+      if (fam === "structure") { width = 2.6; opacity = 0.45; marker = "none"; }
+      else if (fam === "dependency") { width = 1.7; opacity = 0.75; }
+      else if (fam === "contract") { opacity = 0.75; marker = "url(#arrH)"; }
+      else { dash = "2 5"; width = 1.3; opacity = 0.38; marker = "none"; }
       if (edge.confidence === "inferred") dash = "5 4";
-      if (q) opacity = 0.12;
+      if (q) opacity = 0.15;
       const role = this.selected
         ? (edge.source.id === this.selected ? "out" : edge.target.id === this.selected ? "in" : "far")
         : "none";

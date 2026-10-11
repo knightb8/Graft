@@ -5,6 +5,7 @@
  * and path-segment directory exclusions (ADR 0006).
  */
 import type { GraphV1, NodeV1, EdgeV1 } from "./types.js";
+import { generateTransitiveEdges } from "./transitive.js";
 
 export type TripartiteScope = "all" | "code" | "docs" | "specs";
 export type ConcreteScope = "code" | "docs" | "specs";
@@ -15,6 +16,7 @@ export interface GraphFilterCriteria {
   excludeDirs?: string[];
   includeDirs?: string[];
   selectedFiles?: Set<string>;
+  transitive?: boolean;
 }
 
 /** Check if a file path or node path belongs to a given tripartite scope. */
@@ -218,6 +220,13 @@ export function filterVizGraph<T extends FilterableVizGraph>(graph: T, criteria:
   const filteredNodes = graph.nodes.filter((n) => matchNodeFilter(n, criteria));
   const admittedIds = new Set(filteredNodes.map((n) => n.id));
   const filteredEdges = graph.edges.filter((e) => admittedIds.has(e.source) && admittedIds.has(e.target));
+
+  if (criteria.transitive) {
+    const transitiveEdges = generateTransitiveEdges(graph.edges, (id) => admittedIds.has(id));
+    for (const te of transitiveEdges) {
+      filteredEdges.push(te);
+    }
+  }
 
   return {
     ...graph,

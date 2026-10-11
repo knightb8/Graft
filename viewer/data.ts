@@ -12,6 +12,7 @@ export {
   isPathExcluded,
   matchNodeFilter,
 } from "../src/graph/filter.js";
+export { generateTransitiveEdges, type TransitiveEdge } from "../src/graph/transitive.js";
 
 export interface VizNode {
   id: string;
@@ -76,7 +77,7 @@ const FAMILY: Record<string, Family> = {
   part_of: "structure", contains: "structure",
   uses: "dependency", depends_on: "dependency", calls: "dependency", imports: "dependency",
   produces: "dependency", configures: "dependency", validates: "dependency",
-  extends: "contract", implements: "contract", influences: "contract", covers: "contract", verifies: "contract", binds: "contract",
+  extends: "contract", implements: "contract", influences: "contract", covers: "contract", verifies: "contract", binds: "contract", transitive: "contract",
   references: "association", documents: "association",
 };
 
@@ -108,6 +109,7 @@ export const CHIP_HINT: Record<string, string> = {
   "documents": "what does this document or explain?",
   "verifies": "what implementation does this test verify?",
   "binds": "which step definition binds this step?",
+  "transitive": "indirect dependency across filtered intermediate nodes",
   "references": "mentioned but never called — possible dead coupling",
 };
 

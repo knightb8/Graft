@@ -298,6 +298,14 @@ document.querySelectorAll<HTMLInputElement>("input.scope-cb").forEach((cb) => {
   });
 });
 
+const transCb = $("transitiveCb") as HTMLInputElement | null;
+transCb?.addEventListener("change", () => {
+  view.showTransitive = transCb.checked;
+  const parent = transCb.closest(".scope-chip");
+  if (parent) parent.classList.toggle("on", transCb.checked);
+  applyFilters();
+});
+
 $("excludeInput")?.addEventListener("input", (ev) => {
   setExcluded((ev.target as HTMLInputElement).value);
 });

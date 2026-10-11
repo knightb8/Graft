@@ -10,5 +10,5 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["./*.ts", "../src/graph/filter.ts", "../src/graph/types.ts"]
+  "include": ["./*.ts", "../src/graph/filter.ts", "../src/graph/transitive.ts", "../src/graph/types.ts"]
 }

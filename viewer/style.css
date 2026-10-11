@@ -6,8 +6,8 @@
   --chip:#F0F3F3;
   --sys:#4A7DF0; --con:#A06BDB; --fil:#D98E2B; --api:#C95CB8;
   --k-file:#D98E2B; --k-class:#4A7DF0; --k-fn:#4F86C6; --k-method:#3AA7C9; --k-iface:#A06BDB; --k-type:#C95CB8; --k-enum:#B69B3D;
-  --scope-code:#4A7DF0; --scope-docs:#A06BDB; --scope-specs:#2E9E6B;
-  --edge:#9AA4A9; --canvas:#F8FAFA;
+  --scope-code:#4A7DF0; --scope-docs:#A06BDB; --scope-specs:#2E9E6B; --scope-transitive:#D98E2B;
+  --edge:#71828A; --canvas:#F8FAFA;
 }
 @media (prefers-color-scheme: dark){
   :root{
@@ -16,8 +16,8 @@
     --chip:#1C2125;
     --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
     --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
-    --scope-code:#6B94F5; --scope-docs:#B487E0; --scope-specs:#34D399;
-    --edge:#4A545B; --canvas:#101315;
+    --scope-code:#6B94F5; --scope-docs:#B487E0; --scope-specs:#34D399; --scope-transitive:#E0A04A;
+    --edge:#6E7B84; --canvas:#101315;
   }
 }
 :root[data-theme="dark"]{
@@ -26,8 +26,8 @@
   --chip:#1C2125;
   --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
   --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
-  --scope-code:#6B94F5; --scope-docs:#B487E0; --scope-specs:#34D399;
-  --edge:#4A545B; --canvas:#101315;
+  --scope-code:#6B94F5; --scope-docs:#B487E0; --scope-specs:#34D399; --scope-transitive:#E0A04A;
+  --edge:#6E7B84; --canvas:#101315;
 }
 :root[data-theme="light"]{
   --bg:#F4F6F6; --panel:#FFFFFF; --panel2:#FBFCFC; --ink:#17191B; --muted:#6B7278;
@@ -35,8 +35,8 @@
   --chip:#F0F3F3;
   --sys:#4A7DF0; --con:#A06BDB; --fil:#D98E2B; --api:#C95CB8;
   --k-file:#D98E2B; --k-class:#4A7DF0; --k-fn:#4F86C6; --k-method:#3AA7C9; --k-iface:#A06BDB; --k-type:#C95CB8; --k-enum:#B69B3D;
-  --scope-code:#4A7DF0; --scope-docs:#A06BDB; --scope-specs:#2E9E6B;
-  --edge:#9AA4A9; --canvas:#F8FAFA;
+  --scope-code:#4A7DF0; --scope-docs:#A06BDB; --scope-specs:#2E9E6B; --scope-transitive:#D98E2B;
+  --edge:#71828A; --canvas:#F8FAFA;
 }
 
 *{box-sizing:border-box}
@@ -82,6 +82,7 @@ svg.graph:active{cursor:grabbing}
 .sw-code{background:var(--scope-code)}
 .sw-docs{background:var(--scope-docs)}
 .sw-specs{background:var(--scope-specs)}
+.sw-transitive{background:var(--scope-transitive)}
 
 .scope-chip{
   display:inline-flex;
