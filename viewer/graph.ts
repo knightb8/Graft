@@ -106,6 +106,7 @@ export class GraphView {
   hiddenTypes: Record<string, boolean> = {};
   scope: TripartiteScope = "all";
   excludeDirs: string[] = [];
+  selectedFiles?: Set<string>;
   /** The contributor badges on each bubble. A decoration, not a filter — toggling
    * it never changes which nodes are on the canvas. */
   showOwners = true;
@@ -318,7 +319,7 @@ export class GraphView {
       !this.hiddenTypes[n.type] &&
       matchNodeFilter(
         { id: n.id, type: n.type, sources: n.sources },
-        { scope: this.scope, excludeDirs: this.excludeDirs },
+        { scope: this.scope, excludeDirs: this.excludeDirs, selectedFiles: this.selectedFiles },
       )
     );
   }

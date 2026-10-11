@@ -59,6 +59,14 @@ test("matchNodeFilter evaluates scope and exclusions together", () => {
   assert.equal(matchNodeFilter(codeNode, { scope: "code", excludeDirs: ["test"] }), true);
   assert.equal(matchNodeFilter(testNode, { scope: "code", excludeDirs: ["test"] }), false);
   assert.equal(matchNodeFilter(docNode, { scope: "code", excludeDirs: ["test"] }), false);
+
+  // Selected files set
+  const selectedSet = new Set(["src/app.ts", "docs/guide.md"]);
+  assert.equal(matchNodeFilter(codeNode, { selectedFiles: selectedSet }), true);
+  assert.equal(matchNodeFilter(docNode, { selectedFiles: selectedSet }), true);
+  assert.equal(matchNodeFilter(testNode, { selectedFiles: selectedSet }), false);
+  assert.equal(matchNodeFilter(specNode, { selectedFiles: selectedSet }), false);
+  assert.equal(matchNodeFilter(codeNode, { selectedFiles: new Set() }), false);
 });
 
 test("filterGraphV1 removes nodes and dangling edges", () => {

@@ -12,6 +12,7 @@ export interface GraphFilterCriteria {
   scope?: TripartiteScope;
   excludeDirs?: string[];
   includeDirs?: string[];
+  selectedFiles?: Set<string>;
 }
 
 /** Check if a file path or node path belongs to a given tripartite scope. */
@@ -149,6 +150,18 @@ export function matchNodeFilter(node: FilterableNode, criteria?: GraphFilterCrit
   if (criteria.includeDirs && criteria.includeDirs.length > 0) {
     const anyIncluded = pathsToCheck.some((p) => isPathIncluded(p, criteria.includeDirs));
     if (!anyIncluded) return false;
+  }
+
+  // 3. Selected files set (from directory/file tree picker)
+  if (criteria.selectedFiles !== undefined) {
+    if (criteria.selectedFiles.size === 0) return false;
+    if (pathsToCheck.length > 0) {
+      const anySelected = pathsToCheck.some((p) => {
+        const norm = p.replace(/\\/g, "/");
+        return criteria.selectedFiles!.has(norm) || criteria.selectedFiles!.has(norm.toLowerCase());
+      });
+      if (!anySelected) return false;
+    }
   }
 
   return true;

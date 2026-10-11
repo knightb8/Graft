@@ -10,6 +10,7 @@ import {
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
 import { renderOutline } from "./tree.js";
+import { TreePicker } from "./picker.js";
 
 type Tab = "context" | "code" | "outline";
 
@@ -22,13 +23,28 @@ const state = {
   outlineOpen: {} as Record<string, boolean>,
   scope: "all" as TripartiteScope,
   excludeDirs: [] as string[],
+  selectedFiles: null as Set<string> | null,
 };
 
 function currentFilter() {
-  return { scope: state.scope, excludeDirs: state.excludeDirs };
+  return {
+    scope: state.scope,
+    excludeDirs: state.excludeDirs,
+    selectedFiles: state.selectedFiles ?? undefined,
+  };
 }
 
 const view = new GraphView($("graphSvg") as unknown as SVGSVGElement);
+
+const picker = new TreePicker(
+  $("pickerTree"),
+  $("pickerStats"),
+  (selected) => {
+    state.selectedFiles = selected;
+    view.selectedFiles = selected ?? undefined;
+    applyFilters();
+  },
+);
 
 function activeGraph(): VizGraph | null {
   return state.tab === "context" ? state.context : state.code;
@@ -195,6 +211,7 @@ function setTab(tab: Tab): void {
       view.resetView();
       view.setData(graph, graphTab());
       view.reheat();
+      picker.setGraph(graph);
     }
   }
   renderChips();
@@ -299,6 +316,73 @@ $("themeBtn").addEventListener("click", () => {
   renderLegend();
   showDetail(view.selected);
 });
+
+/* ---------- files picker controls ---------- */
+$("pickerAll")?.addEventListener("click", () => picker.selectAll());
+$("pickerNone")?.addEventListener("click", () => picker.selectNone());
+$("pickerSearch")?.addEventListener("input", (ev) => {
+  picker.setFilterQuery((ev.target as HTMLInputElement).value);
+});
+
+/* ---------- resizable left files panel ---------- */
+const PICKER_W_KEY = "graft-viz-picker-w";
+const PICKER_COLLAPSED_KEY = "graft-viz-picker-collapsed";
+const MIN_PICKER = 160;
+
+function setPickerWidth(px: number, persist = true): void {
+  const w = Math.min(Math.max(MIN_PICKER, Math.round(px)), Math.round(window.innerWidth * 0.45));
+  rootEl.style.setProperty("--picker-w", `${w}px`);
+  if (persist) localStorage.setItem(PICKER_W_KEY, String(w));
+}
+const savedPickerW = Number(localStorage.getItem(PICKER_W_KEY));
+if (Number.isFinite(savedPickerW) && savedPickerW >= MIN_PICKER) setPickerWidth(savedPickerW, false);
+
+function setPickerCollapsed(collapsed: boolean, persist = true): void {
+  const panel = $("pickerPanel");
+  const resizer = $("pickerResizer");
+  const openTab = $("pickerOpenTab");
+  if (!panel) return;
+  panel.hidden = collapsed;
+  if (resizer) resizer.hidden = collapsed;
+  if (openTab) openTab.hidden = !collapsed;
+  if (persist) localStorage.setItem(PICKER_COLLAPSED_KEY, collapsed ? "1" : "0");
+  view.reheat();
+}
+
+const savedCollapsed = localStorage.getItem(PICKER_COLLAPSED_KEY) === "1";
+if (savedCollapsed) setPickerCollapsed(true, false);
+
+$("pickerCollapse")?.addEventListener("click", () => setPickerCollapsed(true));
+$("pickerOpenTab")?.addEventListener("click", () => setPickerCollapsed(false));
+$("pickerToggleAppbar")?.addEventListener("click", () => {
+  const panel = $("pickerPanel");
+  setPickerCollapsed(!panel.hidden);
+});
+
+const pickerResizer = $("pickerResizer");
+let draggingPicker = false;
+pickerResizer?.addEventListener("pointerdown", (ev) => {
+  const pe = ev as PointerEvent;
+  draggingPicker = true;
+  pickerResizer.setPointerCapture(pe.pointerId);
+  document.body.style.cursor = "col-resize";
+  ev.preventDefault();
+});
+pickerResizer?.addEventListener("pointermove", (ev) => {
+  if (!draggingPicker) return;
+  const stage = $("stage");
+  const stageLeft = stage.getBoundingClientRect().left;
+  setPickerWidth((ev as PointerEvent).clientX - stageLeft);
+});
+const endPickerDrag = (ev: Event): void => {
+  if (!draggingPicker) return;
+  draggingPicker = false;
+  document.body.style.cursor = "";
+  try { pickerResizer?.releasePointerCapture((ev as PointerEvent).pointerId); } catch {}
+  view.reheat();
+};
+pickerResizer?.addEventListener("pointerup", endPickerDrag);
+pickerResizer?.addEventListener("pointercancel", endPickerDrag);
 
 /* ---------- resizable detail panel ---------- */
 const DETAIL_W_KEY = "graft-viz-detail-w";

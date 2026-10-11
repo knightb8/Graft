@@ -19,12 +19,34 @@
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     <input id="search" type="search" placeholder="Search nodes…" aria-label="Search nodes">
   </div>
+  <button class="iconbtn" id="pickerToggleAppbar" title="Toggle files sidebar" aria-label="Toggle files sidebar">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+  </button>
   <button class="iconbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
   </button>
 </header>
 
 <main class="stage" id="stage">
+  <aside class="picker-panel" id="pickerPanel" aria-label="Files and directories">
+    <div class="picker-header">
+      <div class="picker-title">
+        <b>Files</b>
+        <span class="picker-stats" id="pickerStats"></span>
+      </div>
+      <div class="picker-tools">
+        <button type="button" class="ptool-btn" id="pickerAll" title="Select all files">all</button>
+        <button type="button" class="ptool-btn" id="pickerNone" title="Deselect all files">none</button>
+        <button type="button" class="ptool-btn" id="pickerCollapse" title="Collapse sidebar">◀</button>
+      </div>
+    </div>
+    <div class="picker-filter">
+      <input id="pickerSearch" type="search" placeholder="Filter files…" aria-label="Filter files">
+    </div>
+    <div class="picker-tree" id="pickerTree"></div>
+  </aside>
+  <div class="resizer resizer-left" id="pickerResizer" role="separator" aria-orientation="vertical" aria-label="Resize files panel" tabindex="0" title="Drag to resize"></div>
+  <button class="picker-open-tab" id="pickerOpenTab" title="Open files panel" aria-label="Open files panel" hidden>▶ Files</button>
   <div class="canvas-wrap" id="canvasWrap">
     <svg class="graph" id="graphSvg" role="img" aria-label="Force-directed graph"></svg>
     <div class="edgestyle" id="edgeChips"><span class="cap">Edges</span></div>
