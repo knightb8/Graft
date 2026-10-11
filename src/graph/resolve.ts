@@ -214,7 +214,7 @@ export function resolveEdges(
       }
       let targetFile = e.file;
       if (spec) {
-        targetFile = resolveImport(spec, e.file, byId);
+        targetFile = resolveDocumentLink(spec, e.file, byId);
       }
       // If there's a hash, we can try to point to the specific heading node ID
       // Markdown headings are extracted as `file.md#Heading Text`
@@ -541,6 +541,25 @@ function resolveImport(spec: string, file: string, byId: Map<string, NodeV1>): s
   ];
   for (const c of candidates) if (byId.has(c)) return c;
   return spec;
+}
+
+/**
+ * Resolve a Markdown document link / specifier to an in-repo file node.
+ * Markdown links can be relative (`./adr/0001.md`, `adr/0001.md`, `../README.md`),
+ * or repo-root relative (`/docs/adr/0001.md`).
+ */
+function resolveDocumentLink(spec: string, file: string, byId: Map<string, NodeV1>): string {
+  const cleanSpec = spec.replace(/^\//, "");
+  // 1. Direct hit as a repo-relative path
+  if (byId.has(cleanSpec)) return cleanSpec;
+
+  // 2. Relative to the document's directory
+  const dir = posix.dirname(toPosixPath(file));
+  const relPath = posix.normalize(posix.join(dir, spec));
+  if (byId.has(relPath)) return relPath;
+
+  // 3. Fallback to standard resolveImport (with extension permutations if extension was omitted)
+  return resolveImport(spec.startsWith(".") ? spec : `./${spec}`, file, byId);
 }
 
 /**
