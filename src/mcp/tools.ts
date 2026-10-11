@@ -25,12 +25,34 @@ import {
   readWorkspace,
 } from '../graph/workspace.js';
 import type { NodeV1 } from '../graph/types.js';
+import {
+  filterGraphV1,
+  matchNodeFilter,
+  type GraphFilterCriteria,
+  type TripartiteScope,
+} from '../graph/filter.js';
 import { canonicalToolName } from './tool-names.js';
 
 export interface ToolDef {
   name: string;
   description: string;
   inputSchema: object;
+}
+
+function extractCriteria(args: Record<string, unknown>): GraphFilterCriteria | undefined {
+  const rawScope = args.scope;
+  const scope = (rawScope === 'code' || rawScope === 'docs' || rawScope === 'specs' || rawScope === 'all')
+    ? (rawScope as TripartiteScope)
+    : undefined;
+  const rawEx = args.exclude_dirs ?? args.exclude;
+  let excludeDirs: string[] | undefined;
+  if (Array.isArray(rawEx)) {
+    excludeDirs = rawEx.map(String).map((s) => s.trim()).filter(Boolean);
+  } else if (typeof rawEx === 'string' && rawEx.trim()) {
+    excludeDirs = rawEx.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  if (!scope && (!excludeDirs || excludeDirs.length === 0)) return undefined;
+  return { scope, excludeDirs };
 }
 
 const NO_GRAPH = 'no graph found — run `graft build` first';
@@ -56,6 +78,16 @@ export const TOOLS: ToolDef[] = [
         in: {
           type: 'string',
           description: 'narrow to nodes under this path prefix, filtered before scoring (segment-aware, like scopeOf)',
+        },
+        scope: {
+          type: 'string',
+          enum: ['all', 'code', 'docs', 'specs'],
+          description: 'narrow to an architectural scope (code, docs, or specs)',
+        },
+        exclude_dirs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'directories to exclude from search results',
         },
       },
       required: ['query'],
@@ -93,6 +125,16 @@ export const TOOLS: ToolDef[] = [
         },
         depth: { description: 'transitive walk depth for blast radius (default 1 = direct edges only); pass "all" for the full connected closure — every source that would be affected' },
         in: { type: 'string', description: 'narrow matches to nodes at or under this repo-relative path prefix, e.g. server/src' },
+        scope: {
+          type: 'string',
+          enum: ['all', 'code', 'docs', 'specs'],
+          description: 'narrow trace traversal to an architectural scope (code, docs, or specs)',
+        },
+        exclude_dirs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'directories to exclude from trace traversal',
+        },
       },
       required: ['symbol'],
     },
@@ -108,6 +150,16 @@ export const TOOLS: ToolDef[] = [
         in: { type: 'string', description: 'narrow to files at or under this repo-relative path prefix, e.g. server/src' },
         ignore_case: { type: 'boolean', description: 'case-insensitive match' },
         fixed: { type: 'boolean', description: 'treat pattern as a literal string, not a regex' },
+        scope: {
+          type: 'string',
+          enum: ['all', 'code', 'docs', 'specs'],
+          description: 'narrow regex search hits to an architectural scope (code, docs, or specs)',
+        },
+        exclude_dirs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'directories to exclude from search hits',
+        },
       },
       required: ['pattern'],
     },
@@ -120,6 +172,16 @@ export const TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         max_dirs: { type: 'number', description: 'max directory entries shown, rest counted into dropped (default 16)' },
+        scope: {
+          type: 'string',
+          enum: ['all', 'code', 'docs', 'specs'],
+          description: 'scope to orient within (code, docs, or specs)',
+        },
+        exclude_dirs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'directories to exclude from the repo map',
+        },
       },
     },
   },
@@ -258,6 +320,15 @@ async function callSingleTool(
         const engine = new Graft({ contextDir: dirOverride });
         const inArg = typeof args.in === 'string' && args.in ? args.in : undefined;
         const r = engine.ask(root, query, { limit, source: true, full: args.full === true, in: inArg });
+        const criteria = extractCriteria(args);
+        if (criteria) {
+          r.hits = r.hits.filter((h) =>
+            matchNodeFilter(
+              { id: h.pointer, path: h.pointer.split(':')[0], sources: [h.pointer] },
+              criteria,
+            ),
+          );
+        }
         return { text: formatAsk(r), isError: false };
       }
       case 'graft_file_api': {
@@ -283,8 +354,10 @@ async function callSingleTool(
         // never the FILE id) aren't silently dropped.
         const symbol = String(args.symbol ?? args.file ?? '');
         if (!symbol) return { text: 'graft_trace_calls requires a symbol', isError: true };
-        const w = loadGraphCached(contextDirFor(root, dirOverride));
+        let w = loadGraphCached(contextDirFor(root, dirOverride));
         if (!w) return { text: NO_GRAPH, isError: true };
+        const criteria = extractCriteria(args);
+        if (criteria) w = filterGraphV1(w, criteria);
         const inOpt = typeof args.in === 'string' && args.in ? { in: args.in } : {};
         const matches = resolveSymbol(w, symbol, inOpt);
         if (matches.length === 0) return { text: unknownSymbolText(symbol), isError: true };
@@ -306,8 +379,10 @@ async function callSingleTool(
       case 'graft_find_all': {
         const pattern = String(args.pattern ?? '');
         if (!pattern) return { text: 'graft_find_all requires a pattern', isError: true };
-        const w = loadGraphCached(contextDirFor(root, dirOverride));
+        let w = loadGraphCached(contextDirFor(root, dirOverride));
         if (!w) return { text: NO_GRAPH, isError: true };
+        const criteria = extractCriteria(args);
+        if (criteria) w = filterGraphV1(w, criteria);
         const result = grepGraph(w, root, pattern, {
           ignoreCase: typeof args.ignore_case === 'boolean' ? args.ignore_case : undefined,
           fixed: typeof args.fixed === 'boolean' ? args.fixed : undefined,
@@ -317,8 +392,10 @@ async function callSingleTool(
         return { text: formatGrepResult(result), isError: false };
       }
       case 'graft_repo_map': {
-        const w = loadGraphCached(contextDirFor(root, dirOverride));
+        let w = loadGraphCached(contextDirFor(root, dirOverride));
         if (!w) return { text: NO_GRAPH, isError: true };
+        const criteria = extractCriteria(args);
+        if (criteria) w = filterGraphV1(w, criteria);
         const maxDirs = typeof args.max_dirs === 'number' && Number.isFinite(args.max_dirs) && args.max_dirs > 0 ? args.max_dirs : undefined;
         const map = buildRepoMap(w, { maxDirs });
         return { text: formatRepoMap(map), isError: false };

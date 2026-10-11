@@ -340,3 +340,26 @@ test('an old name dispatches for real, not just in the alias map', async () => {
   assert.equal(check.isError, false);
   assert.ok(!check.text.startsWith('[graft] refreshed'), 'old check name still skips the refresh');
 });
+
+test('MCP tools honor scope and exclude_dirs filters', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'graft-mcptools-filter-'));
+  mkdirSync(join(d, 'src'), { recursive: true });
+  mkdirSync(join(d, 'test'), { recursive: true });
+  writeFileSync(join(d, 'src', 'core.ts'), 'export function coreFn(): number { return 1; }\n');
+  writeFileSync(join(d, 'test', 'core.test.ts'), 'import { coreFn } from "../src/core"; export function testCore() { return coreFn(); }\n');
+  execFileSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'build', d], { stdio: 'pipe' });
+
+  // 1. graft_trace_calls with exclude_dirs: ['test'] should exclude caller in test/
+  const callersWithoutFilter = await callTool(d, 'graft_trace_calls', { symbol: 'coreFn' });
+  assert.match(callersWithoutFilter.text, /testCore/);
+
+  const callersFiltered = await callTool(d, 'graft_trace_calls', { symbol: 'coreFn', exclude_dirs: ['test'] });
+  assert.doesNotMatch(callersFiltered.text, /testCore/);
+
+  // 2. graft_find_all with exclude_dirs
+  const grepAll = await callTool(d, 'graft_find_all', { pattern: 'coreFn' });
+  assert.match(grepAll.text, /test\/core\.test\.ts/);
+
+  const grepFiltered = await callTool(d, 'graft_find_all', { pattern: 'coreFn', exclude_dirs: ['test'] });
+  assert.doesNotMatch(grepFiltered.text, /test\/core\.test\.ts/);
+});
