@@ -14,4 +14,5 @@
 | **parsing** | **core** | 14 | `parsing/core/gherkin_semantic_links-14.feature` | Gherkin Semantic Links |
 | **parsing** | **core** | 11 | `parsing/core/markdown_ast_support-11.feature` | Markdown AST and Document Structure Extraction |
 | **parsing** | **core** | 12 | `parsing/core/semantic_edges_refinement-12.feature` | Semantic Edge Refinements for Tripartite Architecture |
+| **viz** | **core** | 11 | `viz/core/tree_picker-11.feature` | Left Tree-View Picker Panel in Visualizer |
 | **viz** | **core** | 10 | `viz/core/viz_filter-10.feature` | Scope and Directory Filtering in Visualizer |
