@@ -97,6 +97,37 @@ Scenario: Core system initialization
   Then the system should report ready status
 ```
 
+### 5.1 Tripartite Semantic Linking Tags (`@adr:`, `@covers:`, `@ref:`)
+
+Graft indexes codebase intent across the Tripartite Architecture (Code, Specifications, Documentation). Use explicit semantic tags to bridge these domains:
+
+1. **Governing Architecture (`@adr:<path>`)**:
+   - Connects the Feature to the governing Architectural Decision Record (`docs/adr/*.md`).
+   - Generates an `influences` edge in Graft: $\text{ADR} \xrightarrow{\text{influences}} \text{Feature}$.
+   - You can also write a markdown link in the feature description: `Governed by [ADR 0001](docs/adr/0001-init.md)`.
+2. **Behavioral Code Coverage (`@covers:<path>`)**:
+   - Connects the Feature or Scenario to the domain module(s) or step definition file(s) that implement it.
+   - Generates a `covers` edge in Graft: $\text{Feature/Scenario} \xrightarrow{\text{covers}} \text{Module/Class/Steps}$.
+3. **External References (`@ref:<path>`)**:
+   - Connects to auxiliary configurations, test assets, or related specs.
+   - Generates a `references` edge in Graft.
+
+**Example:**
+```gherkin
+@core
+@adr:docs/adr/0001-optical-acquisition.md
+@covers:src/twoflower/desk/motion.py
+@covers:features/steps/desk_capture_steps.py
+Feature: Physical Desk Optical Acquisition
+  Governed by [ADR 0001: Optical Desk Acquisition](docs/adr/0001-optical-acquisition.md).
+
+  @covers:src/twoflower/desk/motion.py
+  Scenario: Autonomous motion settling captures a physical book spread
+    Given a live camera feed observing an open book spread
+    When a page is flipped and motion settles for 600 milliseconds
+    Then an acquisition trigger should fire
+```
+
 ## 6. Anti-patterns to Avoid
 
 When writing Gherkin, avoid the following common pitfalls:

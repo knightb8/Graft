@@ -90,3 +90,14 @@ When building or updating the codebase knowledge graph, filter out low-signal, t
 Prefer explicit whitelisting for high-signal directories:
 `graft build --only-dir src --only-dir features --only-dir docs/adr --only-dir docs/devdocs`
 Graft persists these flags in the graph fingerprint, keeping the index restricted to core source modules, BDD specs, and ADRs (saving >220k tokens per map).
+
+## 7. Tripartite Linking Invariants (`@adr:`, `@covers:`, `@ref:`)
+
+Autonomous agents authoring BDD `.feature` files must explicitly link them to architectural documentation and production implementations:
+
+1. **Governing ADRs**: Tag features with `@adr:<path-to-adr>` (e.g. `@adr:docs/adr/0001-init.md`) or write `Governed by [ADR](docs/adr/0001-init.md)` in the feature narrative.
+2. **Covered Implementations**: Tag features or scenarios with `@covers:<path-to-source-or-test>` (e.g. `@covers:src/module.ts`, `@covers:features/steps/module_steps.py`).
+3. **Asset/Config References**: Tag or reference external fixtures with `@ref:<path>`.
+
+*Why*: This generates semantic `influences` and `covers` edges across the graph, bridging the Tripartite Architecture (Documentation $\to$ Specifications $\to$ Code). See `docs/devdocs/tripartite-linking.md` and `bdd_chem/GHERKIN_PATTERNS.md`.
+
