@@ -62,6 +62,19 @@ export function filterByOnlyDirs(
   });
 }
 
+/** Keep only files whose repo-relative path is NOT at or under one of `excludeDirs`. */
+export function filterByExcludeDirs(
+  files: string[],
+  root: string,
+  excludeDirs?: ReadonlySet<string>,
+): string[] {
+  if (!excludeDirs || excludeDirs.size === 0) return files;
+  return files.filter((abs) => {
+    const rel = relPosix(root, abs);
+    return ![...excludeDirs].some((d) => rel === d || rel.startsWith(`${d}/`));
+  });
+}
+
 export function listSourceFiles(
   root: string,
   outDir: string,
@@ -70,6 +83,7 @@ export function listSourceFiles(
     followNestedRepos: readFollowNestedRepos(resolve(root)),
   }),
   onlyDirs?: ReadonlySet<string>,
+  excludeDirs?: ReadonlySet<string>,
 ): string[] {
   // A file is a source file if a depth-tier grammar (languageOf), a breadth-tier
   // grammar (genericLangOf) or a container (containerLangOf) claims its extension.
@@ -83,9 +97,10 @@ export function listSourceFiles(
     root,
     onlyDirs,
   );
+  const withoutExcluded = filterByExcludeDirs(only, root, excludeDirs);
   const graphIgnore = loadGraphIgnore(root);
-  if (graphIgnore.size === 0) return only;
-  return only.filter((abs) => !graphIgnore.ignores(relPosix(root, abs)));
+  if (graphIgnore.size === 0) return withoutExcluded;
+  return withoutExcluded.filter((abs) => !graphIgnore.ignores(relPosix(root, abs)));
 }
 
 export interface SourceStat {
@@ -109,9 +124,10 @@ export function listSourceStats(
   outDir: string,
   repoFiles?: string[],
   onlyDirs?: ReadonlySet<string>,
+  excludeDirs?: ReadonlySet<string>,
 ): SourceStat[] {
   const out: SourceStat[] = [];
-  for (const abs of listSourceFiles(root, outDir, repoFiles, onlyDirs)) {
+  for (const abs of listSourceFiles(root, outDir, repoFiles, onlyDirs, excludeDirs)) {
     let s: { size: number; mtimeMs: number };
     try {
       s = statSync(abs);
