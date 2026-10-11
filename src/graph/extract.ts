@@ -1,3 +1,4 @@
+import { extractGherkin } from "./gherkin.js";
 /**
  * Tier-1 extraction: source file → {@link NodeV1}[] + raw edges, via tree-sitter.
  *
@@ -20,7 +21,7 @@ import { contentHash } from "../util/id.js";
 import { collectBindings, goReceiverVarOf, resolveRecvType, type FileBindings } from "./bindings.js";
 import type { Kind, NodeV1, Relation } from "./types.js";
 
-export type Language = "typescript" | "tsx" | "python" | "go" | "java" | "kotlin" | "swift" | "php" | "r";
+export type Language = "typescript" | "tsx" | "python" | "go" | "java" | "kotlin" | "swift" | "php" | "r" | "gherkin";
 
 /**
  * Extension → the tree-sitter grammar that parses it, and the label a human expects
@@ -57,6 +58,7 @@ const EXTENSIONS: ReadonlyArray<{ ext: string; grammar: Language; label: string 
   // `entryFor` lower-cases the path before matching, so this one entry covers
   // both `.R` (the conventional case in real R codebases) and `.r`.
   { ext: ".r", grammar: "r", label: "r" },
+  { ext: ".feature", grammar: "gherkin", label: "gherkin" },
 ];
 
 function entryFor(path: string): (typeof EXTENSIONS)[number] | undefined {
@@ -273,6 +275,7 @@ const KINDS_BY_LANG: Record<Language, Record<string, Kind>> = {
   kotlin: KOTLIN_KINDS,
   swift: SWIFT_KINDS,
   php: PHP_KINDS,
+  gherkin: {},
 };
 
 /**
@@ -299,6 +302,7 @@ const CALL_TYPES: Record<Language, ReadonlySet<string>> = {
     "scoped_call_expression",
   ]),
   r: new Set(["call"]),
+  gherkin: new Set(),
 };
 
 const FUNCTION_VALUE_TYPES = new Set([
@@ -321,6 +325,7 @@ const GRAMMARS: Record<Language, unknown> = {
   kotlin: Kotlin,
   swift: Swift,
   php: PHP.php,
+  gherkin: null,
 };
 
 export interface WalkCtx {
@@ -385,6 +390,7 @@ function parseSource(source: string): Parser.SyntaxNode {
 }
 
 export function extractFile(rel: string, source: string, lang: Language): ExtractResult {
+  if (lang === "gherkin") return extractGherkin(rel, source);
   parser.setLanguage(GRAMMARS[lang] as never);
   const root = parseSource(source);
   const bindings = collectBindings(root, lang);
