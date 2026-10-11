@@ -75,8 +75,8 @@ const FAMILY: Record<string, Family> = {
   part_of: "structure", contains: "structure",
   uses: "dependency", depends_on: "dependency", calls: "dependency", imports: "dependency",
   produces: "dependency", configures: "dependency", validates: "dependency",
-  extends: "contract", implements: "contract",
-  references: "association",
+  extends: "contract", implements: "contract", influences: "contract", covers: "contract", verifies: "contract", binds: "contract",
+  references: "association", documents: "association",
 };
 
 export function famOf(rel: string): Family {
@@ -102,6 +102,11 @@ export const CHIP_HINT: Record<string, string> = {
   "validates": "what checks or judges this? (tests, drift checks, scoring)",
   "extends": "what contract must this honor? (inheritance)",
   "implements": "what contract must this honor? (interface)",
+  "influences": "which architectural decision governs this?",
+  "covers": "what code or test does this specification cover?",
+  "documents": "what does this document or explain?",
+  "verifies": "what implementation does this test verify?",
+  "binds": "which step definition binds this step?",
   "references": "mentioned but never called — possible dead coupling",
 };
 

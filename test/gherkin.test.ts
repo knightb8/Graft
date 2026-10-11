@@ -80,3 +80,56 @@ Feature: Order Checkout
   assert.ok(stepFile, "must extract quoted file in step as references edge");
 });
 
+test("Scenario 5: Resolving influences and covers edges against whole-repo index", async () => {
+  const { resolveEdges } = await import("../src/graph/resolve.js");
+  const featureContent = `
+@adr:docs/adr/0001-init.md
+Feature: Checkout
+  @covers:src/billing/checkout.ts
+  Scenario: Pay
+    Given step
+  `;
+  const result = extractGherkin("features/checkout.feature", featureContent);
+  const repoNodes = [
+    ...result.nodes,
+    {
+      id: "docs/adr/0001-init.md",
+      name: "0001-init.md",
+      kind: "file" as const,
+      path: "docs/adr/0001-init.md",
+      span: "L1-L10",
+      signature: null,
+      exported: true,
+      origin: "ast" as const,
+      body_hash: "",
+      summary_state: "ready" as const,
+      summary: null,
+      crux: null,
+    },
+    {
+      id: "src/billing/checkout.ts",
+      name: "checkout.ts",
+      kind: "file" as const,
+      path: "src/billing/checkout.ts",
+      span: "L1-L20",
+      signature: null,
+      exported: true,
+      origin: "ast" as const,
+      body_hash: "",
+      summary_state: "ready" as const,
+      summary: null,
+      crux: null,
+    },
+  ];
+
+  const resolved = resolveEdges(repoNodes, result.rawEdges, { goModules: [] });
+  const influencesEdge = resolved.find((e) => e.relation === "influences");
+  assert.ok(influencesEdge, "must resolve influences edge");
+  assert.equal(influencesEdge.target, "docs/adr/0001-init.md");
+
+  const coversEdge = resolved.find((e) => e.relation === "covers");
+  assert.ok(coversEdge, "must resolve covers edge");
+  assert.equal(coversEdge.target, "src/billing/checkout.ts");
+});
+
+

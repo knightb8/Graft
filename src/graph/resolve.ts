@@ -204,7 +204,13 @@ export function resolveEdges(
   for (const e of rawEdges) {
     if (e.relation === "contains" && e.targetId) {
       add(e.source, e.targetId, "contains", "extracted");
-    } else if (e.relation === "documents" && e.specifier) {
+    } else if (
+      (e.relation === "documents" ||
+        e.relation === "influences" ||
+        e.relation === "covers" ||
+        (e.relation === "references" && !e.name)) &&
+      e.specifier
+    ) {
       const hashIdx = e.specifier.indexOf("#");
       let spec = e.specifier;
       let hash = "";
@@ -235,8 +241,8 @@ export function resolveEdges(
         }
         if (!found) target = `${targetFile}#${anchorText}`;
       }
-      let rel: Relation = "documents";
-      if (target.includes(".feature")) {
+      let rel: Relation = e.relation;
+      if (rel === "documents" && target.includes(".feature")) {
         rel = "influences";
       }
       add(e.source, target, rel, "extracted");
