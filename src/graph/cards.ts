@@ -118,7 +118,23 @@ function renderCard(
   return lines.join("\n") + "\n";
 }
 
-/** Every existing card file (`.md` inside subdirs of outDir; not concept nodes). */
+/** True when a file heading matches a wiring card (`# <path.ext>`). */
+function isWiringCardFile(path: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    const raw = readFileSync(path, "utf8");
+    const parsed = matter(raw);
+    const fm = parsed.data as Record<string, unknown>;
+    // Real concept nodes always carry `slug`
+    if (fm && fm.slug != null && String(fm.slug).length > 0) return false;
+    const line = parsed.content.trimStart().split(/\r?\n/, 1)[0] ?? "";
+    return /^# [^\s#]+\.[A-Za-z0-9]{1,12}(?:\s|$)/.test(line);
+  } catch {
+    return false;
+  }
+}
+
+/** Every existing card file (subdirs of outDir + root-level file cards; not concept nodes or INDEX.md). */
 function listExistingCards(outDir: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -132,10 +148,13 @@ function listExistingCards(outDir: string): string[] {
     }
   };
   for (const e of readdirSync(outDir, { withFileTypes: true })) {
-    // Concept nodes and INDEX.md are top-level files — skip. Cards live in
-    // subdirs (`src/…`, and `_root/` when a root card would collide with a concept).
     if (e.isDirectory() && e.name !== CACHE_DIR && e.name !== GRAPH_DIR) {
       walk(join(outDir, e.name));
+    } else if (e.isFile() && e.name.endsWith(".md") && e.name !== INDEX_FILE) {
+      const full = join(outDir, e.name);
+      if (isWiringCardFile(full)) {
+        out.push(full);
+      }
     }
   }
   return out;
