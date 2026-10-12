@@ -97,3 +97,48 @@ test("filterVizGraph includes transitive edges when transitive option is set", (
   assert.equal(filteredWithTransitive.edges[0].target, "src/login.ts");
   assert.equal((filteredWithTransitive.edges[0] as any).relation, "transitive");
 });
+
+test("generateTransitiveEdges resolves diamond topologies without dropping endpoints", () => {
+  // A -> H1 -> H2 -> C
+  // A -> H3 -> H2 -> C
+  // A -> H1 -> H4 -> D
+  const edges = [
+    { source: "A", target: "H1", relation: "branch1" },
+    { source: "H1", target: "H2", relation: "join" },
+    { source: "A", target: "H3", relation: "branch2" },
+    { source: "H3", target: "H2", relation: "join" },
+    { source: "H2", target: "C", relation: "reaches_c" },
+    { source: "H1", target: "H4", relation: "branch3" },
+    { source: "H4", target: "D", relation: "reaches_d" },
+  ];
+
+  // A, C, D visible. H1, H2, H3, H4 hidden.
+  const isVisible = (id: string) => id === "A" || id === "C" || id === "D";
+
+  const transitive = generateTransitiveEdges(edges, isVisible, 3);
+  const targets = transitive.map((t) => t.target).sort();
+  assert.deepEqual(targets, ["C", "D"]);
+  assert.equal(transitive.every((t) => t.source === "A"), true);
+});
+
+test("generateTransitiveEdges finds the shortest path when multiple hidden paths exist", () => {
+  // Path 1 (2 hops): A -> H1 -> H2 -> B
+  // Path 2 (1 hop):  A -> H3 -> B
+  const edges = [
+    { source: "A", target: "H1", relation: "long1" },
+    { source: "H1", target: "H2", relation: "long2" },
+    { source: "H2", target: "B", relation: "long3" },
+    { source: "A", target: "H3", relation: "short1" },
+    { source: "H3", target: "B", relation: "short2" },
+  ];
+
+  const isVisible = (id: string) => id === "A" || id === "B";
+
+  const transitive = generateTransitiveEdges(edges, isVisible, 3);
+  assert.equal(transitive.length, 1);
+  assert.equal(transitive[0].source, "A");
+  assert.equal(transitive[0].target, "B");
+  // Shortest hop path via H3 should be selected
+  assert.deepEqual(transitive[0].via, ["H3"]);
+});
+

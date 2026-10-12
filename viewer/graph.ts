@@ -244,17 +244,21 @@ export class GraphView {
       label.setAttribute("y", String((sy + ty) / 2 + ux * 14));
     }
     for (const { path, a, b } of this.transitiveEls) {
-      const dx = (b.x ?? 0) - (a.x ?? 0), dy = (b.y ?? 0) - (a.y ?? 0);
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const ux = dx / d, uy = dy / d;
-      const sx = (a.x ?? 0) + ux * (a.r + 2), sy = (a.y ?? 0) + uy * (a.r + 2);
-      const tx = (b.x ?? 0) - ux * (b.r + 6), ty = (b.y ?? 0) - uy * (b.r + 6);
-      const mx = (sx + tx) / 2 - uy * 12, my = (sy + ty) / 2 + ux * 12;
-      path.setAttribute("d", `M${sx},${sy} Q${mx},${my} ${tx},${ty}`);
+      this.updateTransitivePath(path, a, b);
     }
     for (const { group, node } of this.nodeEls) {
       group.setAttribute("transform", `translate(${node.x ?? 0},${node.y ?? 0})`);
     }
+  }
+
+  private updateTransitivePath(path: SVGPathElement, a: SimNode, b: SimNode): void {
+    const dx = (b.x ?? 0) - (a.x ?? 0), dy = (b.y ?? 0) - (a.y ?? 0);
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / d, uy = dy / d;
+    const sx = (a.x ?? 0) + ux * (a.r + 2), sy = (a.y ?? 0) + uy * (a.r + 2);
+    const tx = (b.x ?? 0) - ux * (b.r + 6), ty = (b.y ?? 0) - uy * (b.r + 6);
+    const mx = (sx + tx) / 2 - uy * 12, my = (sy + ty) / 2 + ux * 12;
+    path.setAttribute("d", `M${sx},${sy} Q${mx},${my} ${tx},${ty}`);
   }
 
   /** Re-apply all style attributes (theme, filters, focus, search). */
@@ -313,14 +317,21 @@ export class GraphView {
             path.setAttribute("stroke", cvar("--fil"));
             path.setAttribute("opacity", "0.95");
             path.setAttribute("stroke-width", "2.2");
+            path.setAttribute("marker-end", "url(#arrOut)");
           } else if (role === "in") {
             path.setAttribute("stroke", cvar("--accent"));
             path.setAttribute("opacity", "0.95");
             path.setAttribute("stroke-width", "2.2");
+            path.setAttribute("marker-end", "url(#arrIn)");
           } else if (role === "far") {
             path.setAttribute("opacity", "0.08");
+          } else if (q) {
+            const matchA = !q || a.name.toLowerCase().includes(q);
+            const matchB = !q || b.name.toLowerCase().includes(q);
+            if (!matchA && !matchB) path.setAttribute("opacity", "0.15");
           }
 
+          this.updateTransitivePath(path, a, b);
           this.transitiveGroup.appendChild(path);
           this.transitiveEls.push({ path, a, b });
         }

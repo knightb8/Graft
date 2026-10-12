@@ -61,62 +61,68 @@ export function generateTransitiveEdges(
   for (const [sourceId, edges] of adj.entries()) {
     if (!isVisible(sourceId)) continue;
 
-    for (const firstEdge of edges) {
-      // If target is directly visible, direct edge already exists
-      if (isVisible(firstEdge.target)) continue;
+    // Explore paths starting from all outbound hidden neighbors of sourceId
+    const queue: Array<{
+      current: string;
+      path: string[];
+      relations: string[];
+    }> = [];
 
-      // Target is hidden: explore paths starting at firstEdge.target
-      const queue: Array<{
-        current: string;
-        path: string[];
-        relations: string[];
-      }> = [
-        {
+    const minDepth = new Map<string, number>();
+
+    for (const firstEdge of edges) {
+      if (!isVisible(firstEdge.target)) {
+        queue.push({
           current: firstEdge.target,
           path: [firstEdge.target],
           relations: [firstEdge.relation],
-        },
-      ];
+        });
+        minDepth.set(firstEdge.target, 1);
+      }
+    }
 
-      const visitedInWalk = new Set<string>([sourceId, firstEdge.target]);
+    while (queue.length > 0) {
+      const item = queue.shift()!;
+      if (item.path.length > maxHops) continue;
 
-      while (queue.length > 0) {
-        const item = queue.shift()!;
-        if (item.path.length > maxHops) continue;
+      const nextEdges = adj.get(item.current) ?? [];
+      for (const nextEdge of nextEdges) {
+        const targetId = nextEdge.target;
 
-        const nextEdges = adj.get(item.current) ?? [];
-        for (const nextEdge of nextEdges) {
-          const targetId = nextEdge.target;
+        if (targetId === sourceId) continue; // Cycle back to source
 
-          if (targetId === sourceId) continue; // Cycle back to source
-
-          if (isVisible(targetId)) {
-            // Reached a visible target!
-            const key = `${sourceId}->${targetId}`;
-            if (!directVisible.has(key) && !emitted.has(key)) {
-              emitted.add(key);
-              const chainRels = [...item.relations, nextEdge.relation];
-              const relSummary = chainRels.join(" → ");
-              result.push({
-                source: sourceId,
-                target: targetId,
-                relation: "transitive",
-                description: `via ${item.path.join(", ")} (${relSummary})`,
-                confidence: "inferred",
-                transitive: true,
-                via: item.path,
-              });
-            }
-          } else {
-            // Target is also hidden: continue traversal if not visited and within depth
-            if (!visitedInWalk.has(targetId) && item.path.length < maxHops) {
-              visitedInWalk.add(targetId);
-              queue.push({
-                current: targetId,
-                path: [...item.path, targetId],
-                relations: [...item.relations, nextEdge.relation],
-              });
-            }
+        if (isVisible(targetId)) {
+          // Reached a visible target!
+          const key = `${sourceId}->${targetId}`;
+          if (!directVisible.has(key) && !emitted.has(key)) {
+            emitted.add(key);
+            const chainRels = [...item.relations, nextEdge.relation];
+            const relSummary = chainRels.join(" → ");
+            result.push({
+              source: sourceId,
+              target: targetId,
+              relation: "transitive",
+              description: `via ${item.path.join(", ")} (${relSummary})`,
+              confidence: "inferred",
+              transitive: true,
+              via: item.path,
+            });
+          }
+        } else {
+          // Target is also hidden: continue traversal if not cyclic and within depth
+          const nextHopCount = item.path.length + 1;
+          const prevHopCount = minDepth.get(targetId);
+          if (
+            (prevHopCount === undefined || nextHopCount <= prevHopCount) &&
+            !item.path.includes(targetId) &&
+            item.path.length < maxHops
+          ) {
+            minDepth.set(targetId, nextHopCount);
+            queue.push({
+              current: targetId,
+              path: [...item.path, targetId],
+              relations: [...item.relations, nextEdge.relation],
+            });
           }
         }
       }
