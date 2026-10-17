@@ -49,8 +49,13 @@ export interface NodeAttrs {
   label: string;
   nodeType: string;
   scope: "code" | "docs" | "specs";
-  forceLabel?: boolean;
   hidden?: boolean;
+  labelVisibility?: "visible" | "hidden";
+  labelPosition?: "below" | "above" | "left" | "right" | "over";
+  labelSize?: number;
+  labelColor?: string;
+  labelBackgroundColor?: string;
+  labelBackgroundPadding?: number;
 }
 
 export interface EdgeAttrs {
@@ -105,8 +110,9 @@ export class GraphView {
         renderLabels: true,
         renderEdgeLabels: false,
         enableNodeDrag: true,
-        stagePadding: 30,
-        labelRenderedSizeThreshold: 6,
+        stagePadding: 35,
+        labelRenderedSizeThreshold: 0,
+        labelDensity: 2,
         itemSizesReference: "screen",
         zoomToSizeRatioFunction: Math.sqrt,
         autoRescale: "once",
@@ -235,6 +241,12 @@ export class GraphView {
         label: node.name,
         nodeType: node.type,
         scope: node.scope,
+        labelVisibility: "visible",
+        labelPosition: "below",
+        labelSize: 11,
+        labelColor: cvar("--ink"),
+        labelBackgroundColor: cvar("--panel"),
+        labelBackgroundPadding: 2,
       });
     }
 
@@ -278,6 +290,7 @@ export class GraphView {
         ...data,
         hidden: true,
         label: null,
+        labelVisibility: "hidden",
       };
     }
 
@@ -287,21 +300,29 @@ export class GraphView {
     let size = data.size;
     let opacity = match ? 0.95 : 0.2;
     let highlighted = false;
-    let forceLabel = false;
+    let labelSize = 11;
+    let labelColor = cvar("--ink");
+    let labelBg = cvar("--panel");
 
     if (this.selected) {
       if (nodeId === this.selected) {
         size = data.size + 4;
         opacity = 1.0;
         highlighted = true;
-        forceLabel = true;
+        labelSize = 13;
+        labelBg = cvar("--chip");
       } else if (this.neighbors.has(nodeId)) {
         size = data.size + 1;
         opacity = 0.95;
-        forceLabel = true;
+        labelSize = 11.5;
       } else {
-        opacity = Math.min(opacity, 0.15);
+        opacity = Math.min(opacity, 0.18);
+        labelColor = cvar("--muted");
+        labelSize = 10;
       }
+    } else if (!match) {
+      labelColor = cvar("--muted");
+      labelSize = 10;
     }
 
     const color = cvar(colorToken(this.tab, node.type, node.scope));
@@ -313,8 +334,14 @@ export class GraphView {
       opacity,
       hidden: false,
       highlighted,
-      forceLabel,
-      label: shown ? node.name : null,
+      label: node.name,
+      labelVisibility: "visible",
+      labelPosition: "below",
+      labelSize,
+      labelColor,
+      labelBackgroundColor: labelBg,
+      labelBackgroundPadding: 2,
+      labelFont: '"Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif',
     };
   }
 
