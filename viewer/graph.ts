@@ -14,14 +14,17 @@
  */
 import Sigma from "sigma";
 import { MultiDirectedGraph } from "graphology";
-import forceAtlas2 from "graphology-layout-forceatlas2";
+import {
+  forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide,
+  type Simulation, type SimulationNodeDatum,
+} from "d3-force";
 import {
   type VizGraph, type NodeOwner, type TripartiteScope, type ConcreteScope,
-  famOf, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
+  famOf, REST, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
   generateTransitiveEdges,
 } from "./data.js";
 
-export interface SimNode {
+export interface SimNode extends SimulationNodeDatum {
   id: string;
   name: string;
   type: string;
@@ -32,6 +35,10 @@ export interface SimNode {
   owners?: NodeOwner[];
   x: number;
   y: number;
+  vx?: number;
+  vy?: number;
+  fx?: number | null;
+  fy?: number | null;
 }
 
 export interface NodeAttrs {
@@ -42,6 +49,7 @@ export interface NodeAttrs {
   label: string;
   nodeType: string;
   scope: "code" | "docs" | "specs";
+  forceLabel?: boolean;
   hidden?: boolean;
 }
 
@@ -60,6 +68,7 @@ export class GraphView {
   private container: HTMLElement;
   private graph: MultiDirectedGraph<NodeAttrs, EdgeAttrs>;
   private sigma: Sigma<NodeAttrs, EdgeAttrs>;
+  private sim: Simulation<SimNode, undefined> | null = null;
   private tab: "context" | "code" = "context";
   private rawGraph: VizGraph | null = null;
   private nodes: SimNode[] = [];
@@ -98,6 +107,10 @@ export class GraphView {
         enableNodeDrag: true,
         stagePadding: 30,
         labelRenderedSizeThreshold: 6,
+        itemSizesReference: "screen",
+        zoomToSizeRatioFunction: Math.sqrt,
+        autoRescale: "once",
+        minEdgeThickness: 1,
       },
       nodeReducer: (nodeId, data) => this.reduceNode(nodeId, data),
       edgeReducer: (edgeId, data) => this.reduceEdge(edgeId, data),
@@ -109,6 +122,34 @@ export class GraphView {
 
     this.sigma.on("clickStage", () => {
       this.select(null);
+    });
+
+    this.sigma.on("nodeDragStart", (e) => {
+      const node = this.nodeMap.get(e.node);
+      if (node) {
+        node.fx = node.x;
+        node.fy = node.y;
+        this.sim?.alphaTarget(0.3).restart();
+      }
+    });
+
+    this.sigma.on("nodeDrag", (e) => {
+      const node = this.nodeMap.get(e.node);
+      if (node) {
+        const coords = this.sigma.viewportToGraph(e.event);
+        node.fx = coords.x;
+        node.fy = coords.y;
+        this.sim?.alphaTarget(0.3).restart();
+      }
+    });
+
+    this.sigma.on("nodeDragEnd", (e) => {
+      const node = this.nodeMap.get(e.node);
+      if (node) {
+        node.fx = null;
+        node.fy = null;
+        this.sim?.alphaTarget(0);
+      }
     });
   }
 
@@ -149,11 +190,39 @@ export class GraphView {
         owners: n.owners,
         scope,
         deg: d,
-        r: 7 + Math.min(11, d * 1.8),
-        x: p?.x ?? (Math.cos(angle) * Math.min(W, H) * 0.4),
-        y: p?.y ?? (Math.sin(angle) * Math.min(W, H) * 0.4),
+        r: 4 + Math.min(10, Math.sqrt(d) * 2),
+        x: p?.x ?? (Math.cos(angle) * Math.min(W, H) * 0.35),
+        y: p?.y ?? (Math.sin(angle) * Math.min(W, H) * 0.35),
       };
     });
+
+    const byId = new Map(this.nodes.map((n) => [n.id, n]));
+    const simLinks = graph.edges
+      .map((e) => ({
+        source: byId.get(e.source)!,
+        target: byId.get(e.target)!,
+        relation: e.relation,
+      }))
+      .filter((e) => e.source && e.target);
+
+    // Stop previous simulation
+    this.sim?.stop();
+
+    const chargeStrength = Math.max(-280, Math.min(-60, -60000 / Math.max(1, this.nodes.length)));
+    this.sim = forceSimulation(this.nodes)
+      .force("charge", forceManyBody().strength(chargeStrength).distanceMax(900))
+      .force("link", forceLink(simLinks as any)
+        .distance((l: any) => REST[famOf(l.relation)] ?? 100)
+        .strength(0.45))
+      .force("center", forceCenter(0, 0))
+      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 4).iterations(1))
+      .alpha(0.8)
+      .alphaDecay(0.022);
+
+    // Warm up the simulation synchronously with 25 fast ticks so nodes have initial spread
+    for (let i = 0; i < 25; i++) {
+      this.sim.tick();
+    }
 
     for (const node of this.nodes) {
       this.nodeMap.set(node.id, node);
@@ -178,29 +247,22 @@ export class GraphView {
           description: e.description,
           confidence: e.confidence,
           transitive: false,
-          size: 1.6,
+          size: 1.5,
           color: cvar("--edge"),
         });
       }
     }
 
-    // Run ForceAtlas2 layout
-    if (this.nodes.length > 0) {
-      try {
-        const settings = forceAtlas2.inferSettings(this.graph);
-        forceAtlas2.assign(this.graph, {
-          iterations: Math.min(80, Math.max(25, Math.floor(800 / Math.max(1, this.nodes.length)))),
-          settings: {
-            ...settings,
-            barnesHutOptimize: true,
-            gravity: 1.2,
-            scalingRatio: 3,
-          },
-        });
-      } catch {
-        // Fallback: circular layout already assigned
+    // Connect live simulation ticks to graphology and sigma
+    this.sim.on("tick", () => {
+      for (const n of this.nodes) {
+        this.graph.mergeNodeAttributes(n.id, { x: n.x, y: n.y });
       }
-    }
+      this.sigma.scheduleRefresh();
+    });
+
+    // Resume simulation to let it wobble and relax into equilibrium
+    this.sim.restart();
 
     this.restyle();
     this.resetView();
@@ -222,15 +284,21 @@ export class GraphView {
     const q = this.query.toLowerCase();
     const match = !q || node.name.toLowerCase().includes(q);
 
+    let size = data.size;
     let opacity = match ? 0.95 : 0.2;
     let highlighted = false;
+    let forceLabel = false;
 
     if (this.selected) {
       if (nodeId === this.selected) {
+        size = data.size + 4;
         opacity = 1.0;
         highlighted = true;
+        forceLabel = true;
       } else if (this.neighbors.has(nodeId)) {
+        size = data.size + 1;
         opacity = 0.95;
+        forceLabel = true;
       } else {
         opacity = Math.min(opacity, 0.15);
       }
@@ -240,10 +308,12 @@ export class GraphView {
 
     return {
       ...data,
+      size,
       color,
       opacity,
       hidden: false,
       highlighted,
+      forceLabel,
       label: shown ? node.name : null,
     };
   }
@@ -419,26 +489,11 @@ export class GraphView {
   }
 
   reheat(): void {
-    if (this.nodes.length > 0) {
-      try {
-        const settings = forceAtlas2.inferSettings(this.graph);
-        forceAtlas2.assign(this.graph, {
-          iterations: 35,
-          settings: {
-            ...settings,
-            barnesHutOptimize: true,
-            gravity: 1.2,
-            scalingRatio: 3,
-          },
-        });
-        this.sigma.refresh();
-      } catch {
-        // ignore
-      }
-    }
+    this.sim?.alpha(0.6).restart();
   }
 
   destroy(): void {
+    this.sim?.stop();
     this.sigma.kill();
     this.graph.clear();
   }
