@@ -34,7 +34,7 @@ function currentFilter() {
   };
 }
 
-const view = new GraphView($("graphSvg") as unknown as SVGSVGElement);
+const view = new GraphView(($("graphContainer") || $("graphSvg")) as HTMLElement);
 
 const picker = new TreePicker(
   $("pickerTree"),

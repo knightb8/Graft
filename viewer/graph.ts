@@ -1,30 +1,27 @@
 /**
- * Force-directed graph view. d3-force drives the simulation (Barnes–Hut, so
- * large graphs stay interactive); rendering is persistent SVG — elements are
- * created when data changes and only attributes are updated per tick.
+ * Hardware-accelerated WebGL graph view using Sigma.js and Graphology.
  *
  * Edge grammar (per the design spec):
- *   part of            thick · muted · no arrowhead · short spring
- *   uses-family        solid · open-chevron arrowhead
- *   extends/implements hollow arrowhead
- *   references         faint dots · no arrowhead
- *   inferred edges     dashed (trust is visible)
- * Focus mode: selecting a node paints outgoing edges amber ("depends on"),
- * incoming teal ("depended on by"), labels the verbs on just those edges,
- * and fades the rest of the graph.
+ *   part of            thick · muted
+ *   uses-family        solid · directed arrow
+ *   extends/implements directed arrow
+ *   references         faint
+ *   transitive edges   distinct stroke · inferred
+ *
+ * Focus mode: selecting a node highlights incoming edges (accent),
+ * outgoing edges (amber), keeps direct neighbors visible, and dims
+ * the rest of the graph via reactive WebGL reducers.
  */
+import Sigma from "sigma";
+import { MultiDirectedGraph } from "graphology";
+import forceAtlas2 from "graphology-layout-forceatlas2";
 import {
-  forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide,
-  type Simulation, type SimulationNodeDatum,
-} from "d3-force";
-import {
-  type VizGraph, type VizEdge, type NodeOwner, type TripartiteScope, type ConcreteScope,
-  famOf, REST, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
+  type VizGraph, type NodeOwner, type TripartiteScope, type ConcreteScope,
+  famOf, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
   generateTransitiveEdges,
 } from "./data.js";
-import { initials } from "./detail.js";
 
-interface SimNode extends SimulationNodeDatum {
+export interface SimNode {
   id: string;
   name: string;
   type: string;
@@ -33,74 +30,42 @@ interface SimNode extends SimulationNodeDatum {
   deg: number;
   r: number;
   owners?: NodeOwner[];
-  fx?: number | null;
-  fy?: number | null;
+  x: number;
+  y: number;
 }
 
-interface SimEdge {
-  source: SimNode;
-  target: SimNode;
+export interface NodeAttrs {
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+  label: string;
+  nodeType: string;
+  scope: "code" | "docs" | "specs";
+  hidden?: boolean;
+}
+
+export interface EdgeAttrs {
   relation: string;
   description?: string;
   confidence?: string;
-}
-
-const NS = "http://www.w3.org/2000/svg";
-
-/** Initials shown on a bubble before the rest become a count. Two faces read as
- * "someone else owns this"; five read as a pie chart nobody asked for. */
-const MAX_BADGES = 2;
-
-function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
-  const node = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
-  return node;
-}
-
-/**
- * The contributor stack on a bubble: up to {@link MAX_BADGES} sets of initials,
- * then a `+N`, fanned out from the node's upper right.
- *
- * Drawn once at build time and only shown or hidden afterwards, because the
- * simulation moves the parent group rather than these — a per-tick redraw of two
- * circles per node is the one thing that would make a large graph stutter.
- */
-function ownerBadges(node: SimNode): SVGGElement | null {
-  const owners = node.owners ?? [];
-  if (owners.length === 0) return null;
-  const shown = owners.slice(0, MAX_BADGES);
-  const rest = owners.length - shown.length;
-  const chips = [...shown.map((o) => initials(o.handle ?? o.name)), ...(rest > 0 ? [`+${rest}`] : [])];
-
-  const g = el("g", { "pointer-events": "none" });
-  chips.forEach((text, i) => {
-    // A 45° fan off the top-right, one radius out, so the stack never covers the
-    // node's own colour and never collides with the name under it.
-    const cx = node.r * 0.72 + i * 13;
-    const cy = -node.r * 0.72 + i * 8;
-    g.appendChild(el("circle", { cx, cy, r: 8, fill: cvar("--panel"), stroke: cvar("--con"), "stroke-width": 1.2 }));
-    const t = el("text", {
-      x: cx, y: cy + 3, "text-anchor": "middle", "font-size": 7.5, "font-weight": 700, fill: cvar("--con"),
-    });
-    t.textContent = text;
-    const title = el("title", {});
-    title.textContent = owners.map((o) => `${o.handle ? `@${o.handle}` : o.name} — ${o.commits} commits`).join("\n");
-    g.append(t, title);
-  });
-  return g;
+  transitive?: boolean;
+  via?: string[];
+  size: number;
+  color: string;
+  hidden?: boolean;
 }
 
 export class GraphView {
-  private svg: SVGSVGElement;
-  private defs!: SVGDefsElement;
-  private viewport!: SVGGElement;
-  private sim: Simulation<SimNode, undefined> | null = null;
-  private nodes: SimNode[] = [];
-  private edges: SimEdge[] = [];
-  private edgeEls: { path: SVGPathElement; label: SVGTextElement; edge: SimEdge }[] = [];
-  private nodeEls: { group: SVGGElement; circle: SVGCircleElement; ring: SVGCircleElement; label: SVGTextElement; badges: SVGGElement | null; node: SimNode }[] = [];
-  private view = { x: 0, y: 0, k: 1 };
+  private container: HTMLElement;
+  private graph: MultiDirectedGraph<NodeAttrs, EdgeAttrs>;
+  private sigma: Sigma<NodeAttrs, EdgeAttrs>;
   private tab: "context" | "code" = "context";
+  private rawGraph: VizGraph | null = null;
+  private nodes: SimNode[] = [];
+  private nodeMap = new Map<string, SimNode>();
+  private neighbors = new Set<string>();
+
   selected: string | null = null;
   query = "";
   hiddenRels: Record<string, boolean> = {};
@@ -110,281 +75,300 @@ export class GraphView {
   excludeDirs: string[] = [];
   selectedFiles?: Set<string>;
   showTransitive = true;
-  private rawGraph: VizGraph | null = null;
-  /** The contributor badges on each bubble. A decoration, not a filter — toggling
-   * it never changes which nodes are on the canvas. */
   showOwners = true;
   onSelect: (id: string | null) => void = () => {};
 
-  constructor(svg: SVGSVGElement) {
-    this.svg = svg;
-    this.buildChrome();
-    this.bindPanZoom();
+  constructor(container: HTMLElement | SVGElement) {
+    if (container instanceof SVGElement) {
+      const div = document.createElement("div");
+      div.className = container.getAttribute("class") || "graph";
+      div.id = container.id || "graphContainer";
+      container.replaceWith(div);
+      this.container = div;
+    } else {
+      this.container = container;
+    }
+
+    this.graph = new MultiDirectedGraph<NodeAttrs, EdgeAttrs>();
+
+    this.sigma = new Sigma(this.graph, this.container, {
+      settings: {
+        renderLabels: true,
+        renderEdgeLabels: false,
+        enableNodeDrag: true,
+        stagePadding: 30,
+        labelRenderedSizeThreshold: 6,
+      },
+      nodeReducer: (nodeId, data) => this.reduceNode(nodeId, data),
+      edgeReducer: (edgeId, data) => this.reduceEdge(edgeId, data),
+    });
+
+    this.sigma.on("clickNode", (event) => {
+      this.select(event.node);
+    });
+
+    this.sigma.on("clickStage", () => {
+      this.select(null);
+    });
   }
 
-  private buildChrome(): void {
-    this.svg.textContent = "";
-    this.defs = el("defs", {});
-    this.svg.appendChild(this.defs);
-    this.viewport = el("g", {});
-    this.svg.appendChild(this.viewport);
-    this.svg.addEventListener("click", () => this.select(null));
-  }
-
-  private ensureMarkers(): void {
-    this.defs.textContent = "";
-    const chevron = el("marker", { id: "arr", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 4.5, markerHeight: 4.5, orient: "auto-start-reverse" });
-    chevron.appendChild(el("path", { d: "M2,1.5L8.5,5L2,8.5", fill: "none", stroke: cvar("--edge"), "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0.85 }));
-    const hollow = el("marker", { id: "arrH", viewBox: "0 0 12 12", refX: 10, refY: 6, markerWidth: 6.5, markerHeight: 6.5, orient: "auto-start-reverse" });
-    hollow.appendChild(el("path", { d: "M1.5,1.5L10.5,6L1.5,10.5z", fill: cvar("--canvas"), stroke: cvar("--edge"), "stroke-width": 1.4 }));
-    const transitive = el("marker", { id: "arrTransitive", viewBox: "0 0 12 12", refX: 10, refY: 6, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" });
-    transitive.appendChild(el("path", { d: "M1.5,1.5L10.5,6L1.5,10.5z", fill: cvar("--canvas"), stroke: cvar("--scope-transitive"), "stroke-width": 1.4 }));
-    const out = el("marker", { id: "arrOut", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" });
-    out.appendChild(el("path", { d: "M1,1L9,5L1,9z", fill: cvar("--fil") }));
-    const inn = el("marker", { id: "arrIn", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto-start-reverse" });
-    inn.appendChild(el("path", { d: "M1,1L9,5L1,9z", fill: cvar("--accent") }));
-    for (const m of [chevron, hollow, transitive, out, inn]) this.defs.appendChild(m);
-  }
-
-  /** Load (or morph into) a new dataset. Nodes keep their positions by id. */
+  /** Load (or morph into) a new dataset. */
   setData(graph: VizGraph, tab: "context" | "code"): void {
     this.tab = tab;
     this.rawGraph = graph;
-    const prev = new Map(this.nodes.map((n) => [n.id, n]));
+
     const deg: Record<string, number> = {};
     for (const e of graph.edges) {
       deg[e.source] = (deg[e.source] ?? 0) + 1;
       deg[e.target] = (deg[e.target] ?? 0) + 1;
     }
-    const W = this.svg.clientWidth || 800;
-    const H = this.svg.clientHeight || 600;
+
+    const prevPositions = new Map<string, { x: number; y: number }>();
+    if (this.graph.order > 0) {
+      this.graph.forEachNode((id, attrs) => {
+        prevPositions.set(id, { x: attrs.x, y: attrs.y });
+      });
+    }
+
+    this.graph.clear();
+    this.nodeMap.clear();
+
+    const W = this.container.clientWidth || 800;
+    const H = this.container.clientHeight || 600;
+
     this.nodes = graph.nodes.map((n, i) => {
-      const p = prev.get(n.id);
+      const p = prevPositions.get(n.id);
       const angle = (i / Math.max(1, graph.nodes.length)) * Math.PI * 2;
       const d = deg[n.id] ?? 0;
+      const scope = scopeOfNode(n);
       return {
-        id: n.id, name: n.name, type: n.type, sources: n.sources, owners: n.owners,
-        scope: scopeOfNode(n),
-        deg: d, r: 11 + Math.min(13, d * 2.6),
-        x: p?.x ?? W / 2 + Math.cos(angle) * Math.min(W, H) / 4,
-        y: p?.y ?? H / 2 + Math.sin(angle) * Math.min(W, H) / 4,
-        vx: p?.vx ?? 0, vy: p?.vy ?? 0,
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        sources: n.sources,
+        owners: n.owners,
+        scope,
+        deg: d,
+        r: 7 + Math.min(11, d * 1.8),
+        x: p?.x ?? (Math.cos(angle) * Math.min(W, H) * 0.4),
+        y: p?.y ?? (Math.sin(angle) * Math.min(W, H) * 0.4),
       };
     });
-    const byId = new Map(this.nodes.map((n) => [n.id, n]));
-    this.edges = graph.edges
-      .map((e: VizEdge) => ({
-        source: byId.get(e.source)!, target: byId.get(e.target)!,
-        relation: e.relation, description: e.description, confidence: e.confidence,
-      }))
-      .filter((e) => e.source && e.target);
 
-    this.sim?.stop();
-    this.sim = forceSimulation(this.nodes)
-      .force("charge", forceManyBody().strength(-220))
-      .force("link", forceLink(this.edges as unknown as { source: SimNode; target: SimNode }[])
-        .distance((l) => REST[famOf((l as unknown as SimEdge).relation)])
-        .strength(0.5))
-      .force("center", forceCenter(W / 2, H / 2))
-      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 6))
-      .on("tick", () => this.tick());
+    for (const node of this.nodes) {
+      this.nodeMap.set(node.id, node);
+      const color = cvar(colorToken(this.tab, node.type, node.scope));
+      this.graph.addNode(node.id, {
+        x: node.x,
+        y: node.y,
+        size: node.r,
+        color,
+        label: node.name,
+        nodeType: node.type,
+        scope: node.scope,
+      });
+    }
 
-    this.buildElements();
+    let edgeIdx = 0;
+    for (const e of graph.edges) {
+      if (this.graph.hasNode(e.source) && this.graph.hasNode(e.target)) {
+        const key = `${e.source}->${e.target}:${e.relation}:${edgeIdx++}`;
+        this.graph.addEdgeWithKey(key, e.source, e.target, {
+          relation: e.relation,
+          description: e.description,
+          confidence: e.confidence,
+          transitive: false,
+          size: 1.6,
+          color: cvar("--edge"),
+        });
+      }
+    }
+
+    // Run ForceAtlas2 layout
+    if (this.nodes.length > 0) {
+      try {
+        const settings = forceAtlas2.inferSettings(this.graph);
+        forceAtlas2.assign(this.graph, {
+          iterations: Math.min(80, Math.max(25, Math.floor(800 / Math.max(1, this.nodes.length)))),
+          settings: {
+            ...settings,
+            barnesHutOptimize: true,
+            gravity: 1.2,
+            scalingRatio: 3,
+          },
+        });
+      } catch {
+        // Fallback: circular layout already assigned
+      }
+    }
+
     this.restyle();
+    this.resetView();
   }
 
-  private transitiveGroup!: SVGGElement;
-  private transitiveEls: { path: SVGPathElement; a: SimNode; b: SimNode }[] = [];
+  private reduceNode(nodeId: string, data: any): any {
+    const node = this.nodeMap.get(nodeId);
+    if (!node) return data;
 
-  private buildElements(): void {
-    this.ensureMarkers();
-    this.viewport.textContent = "";
-    this.transitiveGroup = el("g", { class: "transitive-layer" });
-    this.viewport.appendChild(this.transitiveGroup);
-    this.transitiveEls = [];
+    const shown = this.isNodeShown(node);
+    if (!shown) {
+      return {
+        ...data,
+        hidden: true,
+        label: null,
+      };
+    }
 
-    this.edgeEls = this.edges.map((edge) => {
-      const path = el("path", { fill: "none", "stroke-linecap": "round" });
-      const title = el("title", {});
-      title.textContent = edge.relation.replace(/_/g, " ") + (edge.description ? ` — ${edge.description}` : "");
-      path.appendChild(title);
-      const label = el("text", { "text-anchor": "middle", "font-size": 9.5, "font-weight": 700, "stroke-width": 3, "paint-order": "stroke", display: "none" });
-      label.textContent = edge.relation.replace(/_/g, " ");
-      this.viewport.appendChild(path);
-      this.viewport.appendChild(label);
-      return { path, label, edge };
-    });
-    this.nodeEls = this.nodes.map((node) => {
-      const group = el("g", { cursor: "pointer" });
-      const ring = el("circle", { fill: "none", "stroke-width": 1.6, opacity: 0, r: node.r + 5 });
-      const circle = el("circle", { r: node.r, opacity: 0.92 });
-      const label = el("text", { y: node.r + 15, "text-anchor": "middle", "font-size": 11.5, "font-weight": 600 });
-      label.textContent = node.name;
-      const badges = ownerBadges(node);
-      group.append(ring, circle, label);
-      if (badges) group.appendChild(badges);
-      group.addEventListener("click", (ev) => { ev.stopPropagation(); this.select(node.id); });
-      this.bindDrag(group, node);
-      this.viewport.appendChild(group);
-      return { group, circle, ring, label, badges, node };
-    });
+    const q = this.query.toLowerCase();
+    const match = !q || node.name.toLowerCase().includes(q);
+
+    let opacity = match ? 0.95 : 0.2;
+    let highlighted = false;
+
+    if (this.selected) {
+      if (nodeId === this.selected) {
+        opacity = 1.0;
+        highlighted = true;
+      } else if (this.neighbors.has(nodeId)) {
+        opacity = 0.95;
+      } else {
+        opacity = Math.min(opacity, 0.15);
+      }
+    }
+
+    const color = cvar(colorToken(this.tab, node.type, node.scope));
+
+    return {
+      ...data,
+      color,
+      opacity,
+      hidden: false,
+      highlighted,
+      label: shown ? node.name : null,
+    };
   }
 
-  private tick(): void {
-    for (const { path, label, edge } of this.edgeEls) {
-      const a = edge.source, b = edge.target;
-      const dx = (b.x ?? 0) - (a.x ?? 0), dy = (b.y ?? 0) - (a.y ?? 0);
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const ux = dx / d, uy = dy / d;
-      const sx = (a.x ?? 0) + ux * (a.r + 2), sy = (a.y ?? 0) + uy * (a.r + 2);
-      const tx = (b.x ?? 0) - ux * (b.r + 6), ty = (b.y ?? 0) - uy * (b.r + 6);
-      const mx = (sx + tx) / 2 - uy * 10, my = (sy + ty) / 2 + ux * 10;
-      path.setAttribute("d", `M${sx},${sy} Q${mx},${my} ${tx},${ty}`);
-      label.setAttribute("x", String((sx + tx) / 2 - uy * 14));
-      label.setAttribute("y", String((sy + ty) / 2 + ux * 14));
-    }
-    for (const { path, a, b } of this.transitiveEls) {
-      this.updateTransitivePath(path, a, b);
-    }
-    for (const { group, node } of this.nodeEls) {
-      group.setAttribute("transform", `translate(${node.x ?? 0},${node.y ?? 0})`);
-    }
-  }
+  private reduceEdge(edgeId: string, data: any): any {
+    const attrs = this.graph.getEdgeAttributes(edgeId);
+    const source = this.graph.source(edgeId);
+    const target = this.graph.target(edgeId);
 
-  private updateTransitivePath(path: SVGPathElement, a: SimNode, b: SimNode): void {
-    const dx = (b.x ?? 0) - (a.x ?? 0), dy = (b.y ?? 0) - (a.y ?? 0);
-    const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const ux = dx / d, uy = dy / d;
-    const sx = (a.x ?? 0) + ux * (a.r + 2), sy = (a.y ?? 0) + uy * (a.r + 2);
-    const tx = (b.x ?? 0) - ux * (b.r + 6), ty = (b.y ?? 0) - uy * (b.r + 6);
-    const mx = (sx + tx) / 2 - uy * 12, my = (sy + ty) / 2 + ux * 12;
-    path.setAttribute("d", `M${sx},${sy} Q${mx},${my} ${tx},${ty}`);
+    const sourceNode = this.nodeMap.get(source);
+    const targetNode = this.nodeMap.get(target);
+    if (!sourceNode || !targetNode) return { ...data, hidden: true };
+
+    const sourceShown = this.isNodeShown(sourceNode);
+    const targetShown = this.isNodeShown(targetNode);
+    if (!sourceShown || !targetShown) {
+      return { ...data, hidden: true };
+    }
+
+    if (attrs.transitive) {
+      if (!this.showTransitive) return { ...data, hidden: true };
+    } else if (this.hiddenRels[chipKey(attrs.relation)]) {
+      return { ...data, hidden: true };
+    }
+
+    const q = this.query.toLowerCase();
+    const matchA = !q || sourceNode.name.toLowerCase().includes(q);
+    const matchB = !q || targetNode.name.toLowerCase().includes(q);
+
+    const role = this.selected
+      ? (source === this.selected ? "out" : target === this.selected ? "in" : "far")
+      : "none";
+
+    let color = cvar("--edge");
+    let size = 1.6;
+    let opacity = 0.72;
+
+    if (attrs.transitive) {
+      color = cvar("--scope-transitive");
+      opacity = 0.75;
+    } else {
+      const fam = famOf(attrs.relation);
+      if (fam === "structure") {
+        size = 2.4;
+        opacity = 0.45;
+      } else if (fam === "dependency") {
+        size = 1.8;
+        opacity = 0.75;
+      } else if (fam === "contract") {
+        size = 1.8;
+        opacity = 0.75;
+      } else {
+        size = 1.3;
+        opacity = 0.38;
+      }
+    }
+
+    if (role === "out") {
+      color = cvar("--fil");
+      opacity = 0.95;
+      size += 0.8;
+    } else if (role === "in") {
+      color = cvar("--accent");
+      opacity = 0.95;
+      size += 0.8;
+    } else if (role === "far") {
+      opacity = 0.06;
+    } else if (q && !matchA && !matchB) {
+      opacity = 0.15;
+    }
+
+    return {
+      ...data,
+      color,
+      size,
+      opacity,
+      hidden: false,
+    };
   }
 
   /** Re-apply all style attributes (theme, filters, focus, search). */
   restyle(): void {
-    this.ensureMarkers();
-    const neighbors = new Set<string>();
-    if (this.selected) {
-      for (const e of this.edges) {
-        if (e.source.id === this.selected) neighbors.add(e.target.id);
-        if (e.target.id === this.selected) neighbors.add(e.source.id);
-      }
+    this.neighbors.clear();
+    if (this.selected && this.graph.hasNode(this.selected)) {
+      this.graph.forEachNeighbor(this.selected, (neighbor) => {
+        this.neighbors.add(neighbor);
+      });
     }
-    const q = this.query.toLowerCase();
-    const nodeShown = (n: SimNode) => this.isNodeShown(n);
 
     // Dynamic transitive shortcut edges between visible nodes across hidden intermediaries
-    if (this.transitiveGroup) {
-      this.transitiveGroup.textContent = "";
-      this.transitiveEls = [];
+    const edgesToRemove: string[] = [];
+    this.graph.forEachEdge((edgeKey, attrs) => {
+      if (attrs.transitive) edgesToRemove.push(edgeKey);
+    });
+    for (const k of edgesToRemove) this.graph.dropEdge(k);
 
-      if (this.showTransitive && this.rawGraph) {
-        const byId = new Map(this.nodes.map((n) => [n.id, n]));
-        const transEdges = generateTransitiveEdges(
-          this.rawGraph.edges,
-          (id) => {
-            const node = byId.get(id);
-            return node ? nodeShown(node) : false;
-          },
-        );
+    if (this.showTransitive && this.rawGraph) {
+      const isVisible = (id: string) => {
+        const node = this.nodeMap.get(id);
+        return node ? this.isNodeShown(node) : false;
+      };
 
-        for (const te of transEdges) {
-          const a = byId.get(te.source);
-          const b = byId.get(te.target);
-          if (!a || !b) continue;
-
-          if (this.selected && a.id === this.selected) neighbors.add(b.id);
-          if (this.selected && b.id === this.selected) neighbors.add(a.id);
-
-          const path = el("path", {
-            fill: "none",
-            "stroke-linecap": "round",
-            stroke: cvar("--scope-transitive"),
-            "stroke-width": "1.6",
-            "stroke-dasharray": "4 4",
-            opacity: "0.75",
-            "marker-end": "url(#arrTransitive)",
-          });
-          const title = el("title", {});
-          title.textContent = `transitive shortcut (via ${te.via.join(" \u2192 ")})`;
-          path.appendChild(title);
-
-          const role = this.selected
-            ? (a.id === this.selected ? "out" : b.id === this.selected ? "in" : "far")
-            : "none";
-          if (role === "out") {
-            path.setAttribute("stroke", cvar("--fil"));
-            path.setAttribute("opacity", "0.95");
-            path.setAttribute("stroke-width", "2.2");
-            path.setAttribute("marker-end", "url(#arrOut)");
-          } else if (role === "in") {
-            path.setAttribute("stroke", cvar("--accent"));
-            path.setAttribute("opacity", "0.95");
-            path.setAttribute("stroke-width", "2.2");
-            path.setAttribute("marker-end", "url(#arrIn)");
-          } else if (role === "far") {
-            path.setAttribute("opacity", "0.08");
-          } else if (q) {
-            const matchA = !q || a.name.toLowerCase().includes(q);
-            const matchB = !q || b.name.toLowerCase().includes(q);
-            if (!matchA && !matchB) path.setAttribute("opacity", "0.15");
+      const transEdges = generateTransitiveEdges(this.rawGraph.edges, isVisible);
+      let transIdx = 0;
+      for (const te of transEdges) {
+        if (this.graph.hasNode(te.source) && this.graph.hasNode(te.target)) {
+          const key = `transitive:${te.source}->${te.target}:${transIdx++}`;
+          if (!this.graph.hasEdge(key)) {
+            this.graph.addEdgeWithKey(key, te.source, te.target, {
+              relation: "transitive",
+              description: te.description,
+              confidence: "inferred",
+              transitive: true,
+              via: te.via,
+              size: 1.6,
+              color: cvar("--scope-transitive"),
+            });
+            if (this.selected && te.source === this.selected) this.neighbors.add(te.target);
+            if (this.selected && te.target === this.selected) this.neighbors.add(te.source);
           }
-
-          this.updateTransitivePath(path, a, b);
-          this.transitiveGroup.appendChild(path);
-          this.transitiveEls.push({ path, a, b });
         }
       }
     }
 
-    for (const { path, label, edge } of this.edgeEls) {
-      const visible = nodeShown(edge.source) && nodeShown(edge.target) && !this.hiddenRels[chipKey(edge.relation)];
-      path.style.display = visible ? "" : "none";
-      label.setAttribute("display", "none");
-      if (!visible) continue;
-      const fam = famOf(edge.relation);
-      let stroke = cvar("--edge"), width = 1.6, dash = "none", opacity = 0.72, marker = "url(#arr)";
-      if (fam === "structure") { width = 2.6; opacity = 0.45; marker = "none"; }
-      else if (fam === "dependency") { width = 1.7; opacity = 0.75; }
-      else if (fam === "contract") { opacity = 0.75; marker = "url(#arrH)"; }
-      else { dash = "2 5"; width = 1.3; opacity = 0.38; marker = "none"; }
-      if (edge.confidence === "inferred") dash = "5 4";
-      if (q) opacity = 0.15;
-      const role = this.selected
-        ? (edge.source.id === this.selected ? "out" : edge.target.id === this.selected ? "in" : "far")
-        : "none";
-      if (role === "out") { stroke = cvar("--fil"); opacity = 0.95; width += 0.7; marker = "url(#arrOut)"; }
-      else if (role === "in") { stroke = cvar("--accent"); opacity = 0.95; width += 0.7; marker = "url(#arrIn)"; }
-      else if (role === "far") { opacity = 0.06; }
-      path.setAttribute("stroke", stroke);
-      path.setAttribute("stroke-width", String(width));
-      path.setAttribute("stroke-dasharray", dash);
-      path.setAttribute("opacity", String(opacity));
-      if (marker === "none") path.removeAttribute("marker-end");
-      else path.setAttribute("marker-end", marker);
-      if (role === "out" || role === "in") {
-        label.removeAttribute("display");
-        label.setAttribute("fill", stroke);
-        label.setAttribute("stroke", cvar("--canvas"));
-      }
-    }
-
-    for (const { group, circle, ring, label, badges, node } of this.nodeEls) {
-      const shown = nodeShown(node);
-      group.style.display = shown ? "" : "none";
-      if (!shown) continue;
-      const match = !q || node.name.toLowerCase().includes(q);
-      let opacity = match ? 1 : 0.22;
-      if (this.selected && node.id !== this.selected && !neighbors.has(node.id)) opacity = Math.min(opacity, 0.2);
-      group.setAttribute("opacity", String(opacity));
-      const color = cvar(colorToken(this.tab, node.type, node.scope));
-      circle.setAttribute("fill", color);
-      ring.setAttribute("stroke", color);
-      ring.setAttribute("opacity", node.id === this.selected ? "0.55" : "0");
-      label.setAttribute("fill", cvar("--ink"));
-      if (badges) badges.style.display = this.showOwners ? "" : "none";
-    }
+    this.sigma.refresh();
   }
 
   select(id: string | null): void {
@@ -395,14 +379,14 @@ export class GraphView {
 
   /** Center the view on a node and select it (used by search). */
   focus(id: string): void {
-    const node = this.nodes.find((n) => n.id === id);
-    if (!node) return;
-    const W = this.svg.clientWidth, H = this.svg.clientHeight;
-    this.view.k = Math.max(this.view.k, 1.4);
-    this.view.x = W / 2 - (node.x ?? 0) * this.view.k;
-    this.view.y = H / 2 - (node.y ?? 0) * this.view.k;
-    this.applyView();
+    if (!this.graph.hasNode(id)) return;
+    const attrs = this.graph.getNodeAttributes(id);
     this.select(id);
+    const camera = this.sigma.getCamera();
+    camera.animate(
+      { x: attrs.x, y: attrs.y, ratio: Math.min(camera.ratio, 0.4) },
+      { duration: 400 },
+    );
   }
 
   isNodeShown(n: SimNode): boolean {
@@ -420,70 +404,42 @@ export class GraphView {
     return this.nodes.find((n) => this.isNodeShown(n) && n.name.toLowerCase().includes(q));
   }
 
-  private applyView(): void {
-    this.viewport.setAttribute("transform", `translate(${this.view.x},${this.view.y}) scale(${this.view.k})`);
-  }
-
   zoomBy(factor: number): void {
-    const W = this.svg.clientWidth / 2, H = this.svg.clientHeight / 2;
-    const k = Math.max(0.35, Math.min(3, this.view.k * factor));
-    this.view.x = W - (W - this.view.x) * (k / this.view.k);
-    this.view.y = H - (H - this.view.y) * (k / this.view.k);
-    this.view.k = k;
-    this.applyView();
+    const camera = this.sigma.getCamera();
+    if (factor > 1) {
+      camera.zoomIn({ factor });
+    } else {
+      camera.zoomOut({ factor: 1 / factor });
+    }
   }
 
   resetView(): void {
-    this.view = { x: 0, y: 0, k: 1 };
-    this.applyView();
+    const camera = this.sigma.getCamera();
+    camera.reset();
   }
 
   reheat(): void {
-    this.sim?.alpha(0.6).restart();
+    if (this.nodes.length > 0) {
+      try {
+        const settings = forceAtlas2.inferSettings(this.graph);
+        forceAtlas2.assign(this.graph, {
+          iterations: 35,
+          settings: {
+            ...settings,
+            barnesHutOptimize: true,
+            gravity: 1.2,
+            scalingRatio: 3,
+          },
+        });
+        this.sigma.refresh();
+      } catch {
+        // ignore
+      }
+    }
   }
 
-  private bindDrag(group: SVGGElement, node: SimNode): void {
-    group.addEventListener("pointerdown", (ev) => {
-      ev.stopPropagation();
-      group.setPointerCapture(ev.pointerId);
-      const move = (mv: PointerEvent) => {
-        const rect = this.svg.getBoundingClientRect();
-        node.fx = (mv.clientX - rect.left - this.view.x) / this.view.k;
-        node.fy = (mv.clientY - rect.top - this.view.y) / this.view.k;
-        this.sim?.alphaTarget(0.25).restart();
-      };
-      const up = () => {
-        node.fx = null; node.fy = null;
-        this.sim?.alphaTarget(0);
-        group.removeEventListener("pointermove", move);
-        group.removeEventListener("pointerup", up);
-      };
-      group.addEventListener("pointermove", move);
-      group.addEventListener("pointerup", up);
-    });
-  }
-
-  private bindPanZoom(): void {
-    let panStart: { x: number; y: number } | null = null;
-    this.svg.addEventListener("pointerdown", (ev) => {
-      panStart = { x: ev.clientX - this.view.x, y: ev.clientY - this.view.y };
-    });
-    this.svg.addEventListener("pointermove", (ev) => {
-      if (!panStart) return;
-      this.view.x = ev.clientX - panStart.x;
-      this.view.y = ev.clientY - panStart.y;
-      this.applyView();
-    });
-    window.addEventListener("pointerup", () => { panStart = null; });
-    this.svg.addEventListener("wheel", (ev) => {
-      ev.preventDefault();
-      const rect = this.svg.getBoundingClientRect();
-      const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
-      const k = Math.max(0.35, Math.min(3, this.view.k * Math.exp(-ev.deltaY * 0.0016)));
-      this.view.x = px - (px - this.view.x) * (k / this.view.k);
-      this.view.y = py - (py - this.view.y) * (k / this.view.k);
-      this.view.k = k;
-      this.applyView();
-    }, { passive: false });
+  destroy(): void {
+    this.sigma.kill();
+    this.graph.clear();
   }
 }
