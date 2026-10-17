@@ -50,6 +50,7 @@ export interface NodeAttrs {
   nodeType: string;
   scope: "code" | "docs" | "specs";
   hidden?: boolean;
+  visibility?: "visible" | "hidden";
   labelVisibility?: "visible" | "hidden";
   labelPosition?: "below" | "above" | "left" | "right" | "over";
   labelSize?: number;
@@ -67,6 +68,41 @@ export interface EdgeAttrs {
   size: number;
   color: string;
   hidden?: boolean;
+  visibility?: "visible" | "hidden";
+}
+
+function colorWithAlpha(color: string, alpha: number): string {
+  if (color.startsWith("#")) {
+    const c = color.slice(1);
+    const num = parseInt(c.length === 3 ? c.split("").map((x) => x + x).join("") : c, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (color.startsWith("rgb")) {
+    return color.replace(/rgb\((.+)\)/, `rgba($1, ${alpha})`).replace(/rgba\(([^,]+,[^,]+,[^,]+),[^)]+\)/, `rgba($1, ${alpha})`);
+  }
+  return color;
+}
+
+function clusterKeyOfNode(node: SimNode): { key: string; name: string } {
+  if (node.sources && node.sources.length > 0) {
+    const rawPath = node.sources[0].split(" · ")[0].trim();
+    const parts = rawPath.replace(/\\/g, "/").split("/");
+    if (parts.length > 1) {
+      const dir = parts.slice(0, parts.length > 2 ? 2 : 1).join("/");
+      return { key: dir, name: dir };
+    }
+  }
+  if (node.id.includes("/")) {
+    const parts = node.id.split("#")[0].replace(/\\/g, "/").split("/");
+    if (parts.length > 1) {
+      const dir = parts.slice(0, parts.length > 2 ? 2 : 1).join("/");
+      return { key: dir, name: dir };
+    }
+  }
+  return { key: node.scope, name: node.scope.toUpperCase() };
 }
 
 export class GraphView {
@@ -79,7 +115,11 @@ export class GraphView {
   private nodes: SimNode[] = [];
   private nodeMap = new Map<string, SimNode>();
   private neighbors = new Set<string>();
+  private archCanvas: HTMLCanvasElement | null = null;
+  private archCtx: CanvasRenderingContext2D | null = null;
 
+  hovered: string | null = null;
+  private hoverNeighbors = new Set<string>();
   selected: string | null = null;
   query = "";
   hiddenRels: Record<string, boolean> = {};
@@ -102,6 +142,20 @@ export class GraphView {
     } else {
       this.container = container;
     }
+    this.container.style.position = "relative";
+
+    // Setup archipelago background bloom canvas (rendered behind Sigma WebGL)
+    this.archCanvas = document.createElement("canvas");
+    this.archCanvas.className = "archipelago-canvas";
+    this.archCanvas.style.position = "absolute";
+    this.archCanvas.style.top = "0";
+    this.archCanvas.style.left = "0";
+    this.archCanvas.style.width = "100%";
+    this.archCanvas.style.height = "100%";
+    this.archCanvas.style.pointerEvents = "none";
+    this.archCanvas.style.zIndex = "0";
+    this.container.appendChild(this.archCanvas);
+    this.archCtx = this.archCanvas.getContext("2d");
 
     this.graph = new MultiDirectedGraph<NodeAttrs, EdgeAttrs>();
 
@@ -111,9 +165,9 @@ export class GraphView {
         renderEdgeLabels: false,
         enableNodeDrag: true,
         stagePadding: 50,
-        labelRenderedSizeThreshold: 4,
-        labelDensity: 1.0,
-        labelGridCellSize: 100,
+        labelRenderedSizeThreshold: 8.5,
+        labelDensity: 0.8,
+        labelGridCellSize: 120,
         itemSizesReference: "screen",
         zoomToSizeRatioFunction: Math.sqrt,
         autoRescale: "once",
@@ -129,6 +183,34 @@ export class GraphView {
 
     this.sigma.on("clickStage", () => {
       this.select(null);
+    });
+
+    this.sigma.on("enterNode", (event) => {
+      this.hovered = event.node;
+      this.hoverNeighbors.clear();
+      if (this.graph.hasNode(event.node)) {
+        this.graph.forEachNeighbor(event.node, (nbr) => {
+          this.hoverNeighbors.add(nbr);
+        });
+      }
+      this.sigma.refresh();
+      this.drawArchipelago();
+    });
+
+    this.sigma.on("leaveNode", () => {
+      this.hovered = null;
+      this.hoverNeighbors.clear();
+      this.sigma.refresh();
+      this.drawArchipelago();
+    });
+
+    this.sigma.getCamera().on("updated", () => {
+      this.drawArchipelago();
+    });
+
+    window.addEventListener("resize", () => {
+      this.resizeArchCanvas();
+      this.drawArchipelago();
     });
 
     this.sigma.on("nodeDragStart", (e) => {
@@ -270,6 +352,7 @@ export class GraphView {
         this.graph.mergeNodeAttributes(n.id, { x: n.x, y: n.y });
       }
       this.sigma.scheduleRefresh();
+      this.drawArchipelago();
     });
 
     // Resume simulation to let it wobble and relax into equilibrium
@@ -277,6 +360,8 @@ export class GraphView {
 
     this.restyle();
     this.resetView();
+    this.resizeArchCanvas();
+    this.drawArchipelago();
   }
 
   private reduceNode(nodeId: string, data: any): any {
@@ -287,7 +372,11 @@ export class GraphView {
     if (!shown) {
       return {
         ...data,
+        visibility: "hidden",
         hidden: true,
+        size: 0,
+        opacity: 0,
+        color: "transparent",
         label: null,
         labelVisibility: "hidden",
       };
@@ -299,13 +388,15 @@ export class GraphView {
     let size = data.size;
     let opacity = match ? 0.95 : 0.2;
     let highlighted = false;
-    let labelSize = 11;
+    let labelSize = 10.5;
     let labelColor = cvar("--ink");
     let labelBg = cvar("--panel");
-    let labelVisibility: "visible" | "hidden" | undefined = undefined;
+    let labelVisibility: "visible" | "auto" | "hidden" = "auto";
 
     const isSelected = Boolean(this.selected && nodeId === this.selected);
-    const isNeighbor = Boolean(this.selected && this.neighbors.has(nodeId));
+    const isSelectedNeighbor = Boolean(this.selected && this.neighbors.has(nodeId));
+    const isHovered = Boolean(this.hovered && nodeId === this.hovered);
+    const isHoverNeighbor = Boolean(this.hovered && this.hoverNeighbors.has(nodeId));
     const isSearchHit = Boolean(q && node.name.toLowerCase().includes(q));
     const isLandmark = node.deg >= 6;
 
@@ -317,16 +408,44 @@ export class GraphView {
         labelSize = 13;
         labelBg = cvar("--chip");
         labelVisibility = "visible";
-      } else if (isNeighbor) {
+      } else if (isSelectedNeighbor) {
         size = data.size + 1.5;
         opacity = 0.95;
         labelSize = 11.5;
         labelVisibility = "visible";
       } else {
-        opacity = Math.min(opacity, 0.15);
+        opacity = Math.min(opacity, 0.12);
         labelColor = cvar("--muted");
         labelSize = 10;
         labelVisibility = "hidden";
+      }
+    } else if (this.hovered) {
+      if (isHovered) {
+        size = data.size + 3.5;
+        opacity = 1.0;
+        highlighted = true;
+        labelSize = 13;
+        labelBg = cvar("--chip");
+        labelVisibility = "visible";
+      } else if (isHoverNeighbor) {
+        size = data.size + 1.5;
+        opacity = 0.95;
+        labelSize = 11.5;
+        labelVisibility = "visible";
+      } else if (isSearchHit) {
+        labelVisibility = "visible";
+        highlighted = true;
+        labelBg = cvar("--chip");
+        size = data.size + 2;
+      } else if (isLandmark) {
+        labelVisibility = "visible";
+        labelSize = 11;
+        opacity = Math.max(opacity, 0.85);
+      } else {
+        opacity = match ? 0.70 : 0.15;
+        labelColor = cvar("--muted");
+        labelSize = 10;
+        labelVisibility = "auto";
       }
     } else if (isSearchHit) {
       labelVisibility = "visible";
@@ -339,12 +458,14 @@ export class GraphView {
     } else {
       labelColor = cvar("--muted");
       labelSize = 10.5;
+      labelVisibility = "auto";
     }
 
     const color = cvar(colorToken(this.tab, node.type, node.scope));
 
-    const result: any = {
+    return {
       ...data,
+      visibility: "visible",
       size,
       color,
       opacity,
@@ -357,13 +478,8 @@ export class GraphView {
       labelBackgroundColor: labelBg,
       labelBackgroundPadding: 2,
       labelFont: '"Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif',
+      labelVisibility,
     };
-
-    if (labelVisibility !== undefined) {
-      result.labelVisibility = labelVisibility;
-    }
-
-    return result;
   }
 
   private reduceEdge(edgeId: string, data: any): any {
@@ -373,26 +489,33 @@ export class GraphView {
 
     const sourceNode = this.nodeMap.get(source);
     const targetNode = this.nodeMap.get(target);
-    if (!sourceNode || !targetNode) return { ...data, hidden: true };
+    if (!sourceNode || !targetNode) {
+      return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
+    }
 
     const sourceShown = this.isNodeShown(sourceNode);
     const targetShown = this.isNodeShown(targetNode);
     if (!sourceShown || !targetShown) {
-      return { ...data, hidden: true };
+      return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
     }
 
     if (attrs.transitive) {
-      if (!this.showTransitive) return { ...data, hidden: true };
+      if (!this.showTransitive) {
+        return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
+      }
     } else if (this.hiddenRels[chipKey(attrs.relation)]) {
-      return { ...data, hidden: true };
+      return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
     }
 
     const q = this.query.toLowerCase();
     const matchA = !q || sourceNode.name.toLowerCase().includes(q);
     const matchB = !q || targetNode.name.toLowerCase().includes(q);
 
-    const role = this.selected
-      ? (source === this.selected ? "out" : target === this.selected ? "in" : "far")
+    const isHoverActive = !this.selected && Boolean(this.hovered);
+    const activeFocusId = this.selected ?? (isHoverActive ? this.hovered : null);
+
+    const role = activeFocusId
+      ? (source === activeFocusId ? "out" : target === activeFocusId ? "in" : "far")
       : "none";
 
     let color = cvar("--edge");
@@ -428,13 +551,14 @@ export class GraphView {
       opacity = 0.95;
       size += 0.8;
     } else if (role === "far") {
-      opacity = 0.06;
+      opacity = isHoverActive ? 0.15 : 0.06;
     } else if (q && !matchA && !matchB) {
       opacity = 0.15;
     }
 
     return {
       ...data,
+      visibility: "visible",
       color,
       size,
       opacity,
@@ -487,6 +611,7 @@ export class GraphView {
     }
 
     this.sigma.refresh();
+    this.drawArchipelago();
   }
 
   select(id: string | null): void {
@@ -542,7 +667,157 @@ export class GraphView {
 
   destroy(): void {
     this.sim?.stop();
+    this.archCanvas?.remove();
+    this.archCanvas = null;
+    this.archCtx = null;
     this.sigma.kill();
     this.graph.clear();
+  }
+
+  private resizeArchCanvas(): void {
+    if (!this.archCanvas || !this.container) return;
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const w = this.container.clientWidth || 800;
+    const h = this.container.clientHeight || 600;
+    const targetW = Math.round(w * dpr);
+    const targetH = Math.round(h * dpr);
+    if (this.archCanvas.width !== targetW || this.archCanvas.height !== targetH) {
+      this.archCanvas.width = targetW;
+      this.archCanvas.height = targetH;
+      this.archCanvas.style.width = `${w}px`;
+      this.archCanvas.style.height = `${h}px`;
+    }
+  }
+
+  private drawArchipelago(): void {
+    if (!this.archCtx || !this.archCanvas || !this.container) return;
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const w = this.container.clientWidth || 800;
+    const h = this.container.clientHeight || 600;
+    const ctx = this.archCtx;
+
+    this.resizeArchCanvas();
+
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    if (this.nodes.length === 0) {
+      ctx.restore();
+      return;
+    }
+
+    // Group all visible nodes by cluster
+    const clusters = new Map<string, { key: string; name: string; scope: string; nodes: SimNode[] }>();
+    for (const n of this.nodes) {
+      if (!this.isNodeShown(n)) continue;
+      const c = clusterKeyOfNode(n);
+      let cl = clusters.get(c.key);
+      if (!cl) {
+        cl = { key: c.key, name: c.name, scope: n.scope, nodes: [] };
+        clusters.set(c.key, cl);
+      }
+      cl.nodes.push(n);
+    }
+
+    const palette = ["#38bdf8", "#818cf8", "#c084fc", "#f472b6", "#34d399", "#fbbf24", "#2dd4bf", "#fb7185"];
+    const hashColor = (str: string, scope: string) => {
+      if (scope === "specs" || str.startsWith("features") || str.includes("test")) return "#10b981";
+      if (scope === "docs" || str.startsWith("docs") || str.includes("adr")) return "#a855f7";
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+      return palette[hash % palette.length];
+    };
+
+    for (const cl of clusters.values()) {
+      if (cl.nodes.length < 2) continue;
+
+      // Project node positions to viewport coordinates
+      const pts = cl.nodes.map((n) => {
+        const vp = this.sigma.graphToViewport({ x: n.x, y: n.y });
+        return { x: vp.x, y: vp.y, r: n.r, id: n.id };
+      });
+
+      // Frustum check: bounding box
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let sumX = 0, sumY = 0;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+        sumX += p.x;
+        sumY += p.y;
+      }
+
+      if (maxX < -300 || minX > w + 300 || maxY < -300 || minY > h + 300) {
+        continue;
+      }
+
+      const cx = sumX / pts.length;
+      const cy = sumY / pts.length;
+
+      // Calculate 90th percentile distance from centroid to prevent outlier ballooning
+      const dists = pts.map((p) => Math.hypot(p.x - cx, p.y - cy)).sort((a, b) => a - b);
+      const p90 = dists[Math.min(dists.length - 1, Math.floor(dists.length * 0.9))];
+      const maxDist = Math.max(25, p90);
+      const bloomRadius = Math.max(50, maxDist + 35);
+
+      const isHoveredCluster = Boolean(
+        this.hovered && pts.some((p) => p.id === this.hovered || this.hoverNeighbors.has(p.id)),
+      );
+      const isSelectedCluster = Boolean(
+        this.selected && pts.some((p) => p.id === this.selected || this.neighbors.has(p.id)),
+      );
+      const isHighlighted = isHoveredCluster || isSelectedCluster;
+
+      const baseColor = hashColor(cl.key, cl.scope);
+
+      // 1. Draw individual node sub-blooms for organic archipelago contour
+      for (const p of pts) {
+        const subR = Math.max(28, p.r + 26);
+        const subGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, subR);
+        subGrad.addColorStop(0, colorWithAlpha(baseColor, isHighlighted ? 0.22 : 0.08));
+        subGrad.addColorStop(0.5, colorWithAlpha(baseColor, isHighlighted ? 0.10 : 0.035));
+        subGrad.addColorStop(1, colorWithAlpha(baseColor, 0));
+        ctx.fillStyle = subGrad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, subR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 2. Draw outer ambient cluster glow
+      const grad = ctx.createRadialGradient(cx, cy, Math.max(10, maxDist * 0.25), cx, cy, bloomRadius);
+      grad.addColorStop(0, colorWithAlpha(baseColor, isHighlighted ? 0.28 : 0.10));
+      grad.addColorStop(0.5, colorWithAlpha(baseColor, isHighlighted ? 0.12 : 0.04));
+      grad.addColorStop(1, colorWithAlpha(baseColor, 0));
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, bloomRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. Subtle archipelago boundary contour & watermark label
+      if (maxDist > 25) {
+        ctx.save();
+        ctx.strokeStyle = colorWithAlpha(baseColor, isHighlighted ? 0.38 : 0.14);
+        ctx.lineWidth = isHighlighted ? 1.5 : 1.0;
+        ctx.setLineDash([5, 7]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxDist + 22, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // Watermark badge label
+        const labelText = `⬡ ${cl.name} (${cl.nodes.length})`;
+        ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = colorWithAlpha(baseColor, isHighlighted ? 0.85 : 0.40);
+        ctx.fillText(labelText, cx, cy - maxDist - 12);
+      }
+    }
+
+    ctx.restore();
   }
 }

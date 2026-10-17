@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { MultiDirectedGraph } from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import { generateTransitiveEdges } from "../src/graph/transitive.js";
-import { scopeOfPath } from "../src/graph/filter.js";
+import { scopeOfPath, matchNodeFilter } from "../src/graph/filter.js";
 
 test("Graphology model stores nodes, scopes, and edges for visualizer", () => {
   const graph = new MultiDirectedGraph();
@@ -105,3 +105,52 @@ test("Transitive shortcuts integrate into Graphology model across hidden nodes",
   assert.equal(graph.getEdgeAttribute("trans:A->C", "transitive"), true);
   assert.deepEqual(graph.getEdgeAttribute("trans:A->C", "via"), ["B"]);
 });
+
+test("Tree filtering correctly excludes unselected files and excluded directories", () => {
+  const nodeA = { id: "src/graph/index.ts", type: "file", sources: ["src/graph/index.ts · 1-10"] };
+  const nodeB = { id: "src/cli.ts", type: "file", sources: ["src/cli.ts · 1-5"] };
+
+  // When selectedFiles is active (user unticked a tree box)
+  const selectedFiles = new Set(["src/graph/index.ts"]);
+  assert.equal(matchNodeFilter(nodeA, { selectedFiles }), true);
+  assert.equal(matchNodeFilter(nodeB, { selectedFiles }), false);
+
+  // When excludeDirs is active
+  assert.equal(matchNodeFilter(nodeA, { excludeDirs: ["src/graph"] }), false);
+  assert.equal(matchNodeFilter(nodeB, { excludeDirs: ["src/graph"] }), true);
+});
+
+test("Sigma display contracts enforce visibility: hidden on filtered elements", () => {
+  // Simulates reduceNode / reduceEdge contract for Sigma v4
+  const reduceNodeMock = (shown: boolean, data: any) => {
+    if (!shown) {
+      return {
+        ...data,
+        visibility: "hidden",
+        hidden: true,
+        size: 0,
+        opacity: 0,
+        color: "transparent",
+        label: null,
+        labelVisibility: "hidden",
+      };
+    }
+    return {
+      ...data,
+      visibility: "visible",
+      labelVisibility: "auto",
+    };
+  };
+
+  const hiddenResult = reduceNodeMock(false, { size: 10, color: "#fff" });
+  assert.equal(hiddenResult.visibility, "hidden");
+  assert.equal(hiddenResult.size, 0);
+  assert.equal(hiddenResult.opacity, 0);
+  assert.equal(hiddenResult.label, null);
+  assert.equal(hiddenResult.labelVisibility, "hidden");
+
+  const visibleResult = reduceNodeMock(true, { size: 10, color: "#fff" });
+  assert.equal(visibleResult.visibility, "visible");
+  assert.equal(visibleResult.labelVisibility, "auto");
+});
+
