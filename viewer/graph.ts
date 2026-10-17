@@ -110,9 +110,10 @@ export class GraphView {
         renderLabels: true,
         renderEdgeLabels: false,
         enableNodeDrag: true,
-        stagePadding: 35,
-        labelRenderedSizeThreshold: 0,
-        labelDensity: 2,
+        stagePadding: 50,
+        labelRenderedSizeThreshold: 4,
+        labelDensity: 1.0,
+        labelGridCellSize: 100,
         itemSizesReference: "screen",
         zoomToSizeRatioFunction: Math.sqrt,
         autoRescale: "once",
@@ -214,19 +215,18 @@ export class GraphView {
     // Stop previous simulation
     this.sim?.stop();
 
-    const chargeStrength = Math.max(-280, Math.min(-60, -60000 / Math.max(1, this.nodes.length)));
     this.sim = forceSimulation(this.nodes)
-      .force("charge", forceManyBody().strength(chargeStrength).distanceMax(900))
+      .force("charge", forceManyBody().strength((n: any) => -300 - Math.min(350, (n.deg ?? 0) * 25)).distanceMax(1800))
       .force("link", forceLink(simLinks as any)
-        .distance((l: any) => REST[famOf(l.relation)] ?? 100)
-        .strength(0.45))
-      .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 4).iterations(1))
+        .distance((l: any) => (REST[famOf(l.relation)] ?? 110) * 1.5)
+        .strength(0.35))
+      .force("center", forceCenter(0, 0).strength(0.08))
+      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 26).strength(0.85).iterations(2))
       .alpha(0.8)
-      .alphaDecay(0.022);
+      .alphaDecay(0.02);
 
-    // Warm up the simulation synchronously with 25 fast ticks so nodes have initial spread
-    for (let i = 0; i < 25; i++) {
+    // Warm up the simulation synchronously with 45 fast ticks so nodes expand properly
+    for (let i = 0; i < 45; i++) {
       this.sim.tick();
     }
 
@@ -241,7 +241,6 @@ export class GraphView {
         label: node.name,
         nodeType: node.type,
         scope: node.scope,
-        labelVisibility: "visible",
         labelPosition: "below",
         labelSize: 11,
         labelColor: cvar("--ink"),
@@ -303,31 +302,48 @@ export class GraphView {
     let labelSize = 11;
     let labelColor = cvar("--ink");
     let labelBg = cvar("--panel");
+    let labelVisibility: "visible" | "hidden" | undefined = undefined;
+
+    const isSelected = Boolean(this.selected && nodeId === this.selected);
+    const isNeighbor = Boolean(this.selected && this.neighbors.has(nodeId));
+    const isSearchHit = Boolean(q && node.name.toLowerCase().includes(q));
+    const isLandmark = node.deg >= 6;
 
     if (this.selected) {
-      if (nodeId === this.selected) {
+      if (isSelected) {
         size = data.size + 4;
         opacity = 1.0;
         highlighted = true;
         labelSize = 13;
         labelBg = cvar("--chip");
-      } else if (this.neighbors.has(nodeId)) {
-        size = data.size + 1;
+        labelVisibility = "visible";
+      } else if (isNeighbor) {
+        size = data.size + 1.5;
         opacity = 0.95;
         labelSize = 11.5;
+        labelVisibility = "visible";
       } else {
-        opacity = Math.min(opacity, 0.18);
+        opacity = Math.min(opacity, 0.15);
         labelColor = cvar("--muted");
         labelSize = 10;
+        labelVisibility = "hidden";
       }
-    } else if (!match) {
+    } else if (isSearchHit) {
+      labelVisibility = "visible";
+      highlighted = true;
+      labelBg = cvar("--chip");
+      size = data.size + 2;
+    } else if (isLandmark) {
+      labelVisibility = "visible";
+      labelSize = 11;
+    } else {
       labelColor = cvar("--muted");
-      labelSize = 10;
+      labelSize = 10.5;
     }
 
     const color = cvar(colorToken(this.tab, node.type, node.scope));
 
-    return {
+    const result: any = {
       ...data,
       size,
       color,
@@ -335,7 +351,6 @@ export class GraphView {
       hidden: false,
       highlighted,
       label: node.name,
-      labelVisibility: "visible",
       labelPosition: "below",
       labelSize,
       labelColor,
@@ -343,6 +358,12 @@ export class GraphView {
       labelBackgroundPadding: 2,
       labelFont: '"Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif',
     };
+
+    if (labelVisibility !== undefined) {
+      result.labelVisibility = labelVisibility;
+    }
+
+    return result;
   }
 
   private reduceEdge(edgeId: string, data: any): any {
