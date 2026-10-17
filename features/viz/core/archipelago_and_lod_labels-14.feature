@@ -38,3 +38,11 @@ Feature: Visualizer Archipelago Blooms and Smart LOD Labels
     And node sizes and opacities should be reduced to zero
     And connected edges should also receive hidden visibility
     And the unticked nodes should be excluded from archipelago cluster calculations
+
+  @covers:viewer/graph.ts @covers:test/viz-sigma.test.ts
+  Scenario: Center real estate auto-framing on initial load and view reset
+    When the visualizer loads or the user resets the view
+    Then the bounding box of visible nodes should be centered within the viewport
+    And the camera ratio should scale so nodes occupy approximately seventy-five percent of the center real estate
+    And all visible markers on small graphs should display readable labels
+

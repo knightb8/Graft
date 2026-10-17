@@ -239,6 +239,8 @@ test("Smart LOD label rules prioritize landmarks, hover, and search hits", () =>
   interface NodeLODInput {
     id: string;
     deg: number;
+    totalVisible: number;
+    maxDeg: number;
     hovered: string | null;
     hoverNeighbors: Set<string>;
     selected: string | null;
@@ -257,36 +259,85 @@ test("Smart LOD label rules prioritize landmarks, hover, and search hits", () =>
     if (input.query && input.id.toLowerCase().includes(input.query.toLowerCase())) {
       return { labelVisibility: "visible", elevated: true };
     }
-    if (input.deg >= 6) {
-      return { labelVisibility: "visible", elevated: false }; // landmark hub
+    const isLandmark =
+      input.totalVisible <= 35 ||
+      input.deg >= 5 ||
+      (input.totalVisible > 35 && input.deg >= Math.max(3, Math.round(input.maxDeg * 0.35)));
+    if (isLandmark) {
+      return { labelVisibility: "visible", elevated: false }; // landmark hub / small-graph marker
     }
     return { labelVisibility: "auto", elevated: false }; // spatial grid zoom
   }
 
-  // 1. Normal unhovered low-degree node -> "auto"
-  const normal = computeLODLabel({ id: "foo", deg: 2, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
-  assert.equal(normal.labelVisibility, "auto");
-  assert.equal(normal.elevated, false);
+  // 1. Small graph (8 nodes total, e.g. concept graph) -> ALL visible markers have labels
+  const smallGraphNode = computeLODLabel({ id: "concept", deg: 1, totalVisible: 8, maxDeg: 2, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  assert.equal(smallGraphNode.labelVisibility, "visible", "Small graphs render 100% of visible markers with visible labels");
+  assert.equal(smallGraphNode.elevated, false);
 
-  // 2. Landmark high-degree hub -> "visible"
-  const landmark = computeLODLabel({ id: "hub", deg: 8, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  // 2. Large graph (100 nodes, maxDeg 14) low-degree node -> "auto"
+  const largeNormal = computeLODLabel({ id: "leaf", deg: 1, totalVisible: 100, maxDeg: 14, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  assert.equal(largeNormal.labelVisibility, "auto");
+  assert.equal(largeNormal.elevated, false);
+
+  // 3. Large graph landmark hub (deg 6 >= 5 and >= 14 * 0.35 = 5) -> "visible"
+  const landmark = computeLODLabel({ id: "hub", deg: 6, totalVisible: 100, maxDeg: 14, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
   assert.equal(landmark.labelVisibility, "visible");
   assert.equal(landmark.elevated, false);
 
-  // 3. Hovered node -> "visible" & elevated
-  const hovered = computeLODLabel({ id: "foo", deg: 2, hovered: "foo", hoverNeighbors: new Set(), selected: null, query: "" });
+  // 4. Hovered node -> "visible" & elevated
+  const hovered = computeLODLabel({ id: "foo", deg: 1, totalVisible: 100, maxDeg: 14, hovered: "foo", hoverNeighbors: new Set(), selected: null, query: "" });
   assert.equal(hovered.labelVisibility, "visible");
   assert.equal(hovered.elevated, true);
 
-  // 4. Hover neighbor -> "visible" & elevated
-  const hoverNbr = computeLODLabel({ id: "bar", deg: 1, hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "" });
+  // 5. Hover neighbor -> "visible" & elevated
+  const hoverNbr = computeLODLabel({ id: "bar", deg: 1, totalVisible: 100, maxDeg: 14, hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "" });
   assert.equal(hoverNbr.labelVisibility, "visible");
   assert.equal(hoverNbr.elevated, true);
 
-  // 5. Search hit -> "visible" & elevated
-  const hit = computeLODLabel({ id: "auth_service", deg: 1, hovered: null, hoverNeighbors: new Set(), selected: null, query: "auth" });
+  // 6. Search hit -> "visible" & elevated
+  const hit = computeLODLabel({ id: "auth_service", deg: 1, totalVisible: 100, maxDeg: 14, hovered: null, hoverNeighbors: new Set(), selected: null, query: "auth" });
   assert.equal(hit.labelVisibility, "visible");
   assert.equal(hit.elevated, true);
+});
+
+test("Center real estate auto-framing calculates camera ratio for 75% viewport coverage", () => {
+  function computeFramingRatio(
+    boxW: number,
+    boxH: number,
+    viewportW: number,
+    viewportH: number,
+    targetCoverage = 0.75,
+  ): number {
+    const targetW = viewportW * targetCoverage;
+    const targetH = viewportH * targetCoverage;
+    return Math.max(0.15, Math.min(2.5, Math.max(boxW / targetW, boxH / targetH)));
+  }
+
+  const W = 1000;
+  const H = 800;
+  // Target width = 750px, Target height = 600px
+
+  // Scenario A: Over-dispersed graph spanning 900x700px at ratio 1.0 (pushed near borders)
+  // Ratio must zoom out to 1.2 (900 / 750) so box shrinks to exactly 750px (75% of viewport)
+  const ratioA = computeFramingRatio(900, 700, W, H);
+  assert.equal(Math.round(ratioA * 100) / 100, 1.2);
+
+  // Scenario B: Compact graph spanning 375x300px at ratio 1.0 (only 37.5% of viewport)
+  // Ratio must zoom in to 0.5 (375 / 750) so box expands to exactly 750px (75% of viewport)
+  const ratioB = computeFramingRatio(375, 300, W, H);
+  assert.equal(ratioB, 0.5);
+
+  // Scenario C: Height-dominant graph (tall hierarchy) spanning 300x720px
+  // Height constraint (720 / 600 = 1.2) dictates ratio
+  const ratioC = computeFramingRatio(300, 720, W, H);
+  assert.equal(Math.round(ratioC * 100) / 100, 1.2);
+
+  // Scenario D: Safety clamps prevent extreme zoom blowout
+  const extremeLarge = computeFramingRatio(10000, 10000, W, H);
+  assert.equal(extremeLarge, 2.5);
+
+  const extremeTiny = computeFramingRatio(1, 1, W, H);
+  assert.equal(extremeTiny, 0.15);
 });
 
 test("Adaptive neighborhood cohesion scales with graph size and rejects isolated nodes", () => {

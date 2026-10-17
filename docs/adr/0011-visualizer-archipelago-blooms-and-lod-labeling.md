@@ -45,9 +45,11 @@ We adopt a **Dual-Layer Architecture** combining Sigma WebGL with an HTML5 2D ca
 
 ### 2. Smart Level-of-Detail (LOD) Labeling
 In Sigma 4, `DisplayData` supports `labelVisibility: "visible" | "auto" | "hidden"`:
-- **Landmark Anchors**: Visible nodes with high degree (`node.deg >= 6`) are assigned `labelVisibility: "visible"`. In zoomed-out views, these major hubs act like capital cities on a world map.
+- **Scale-Adaptive Landmark Anchors**:
+  - For small or concept graphs ($N \le 35$ visible nodes), 100% of visible nodes are designated as landmarks (`isLandmark = true`), ensuring all marker labels are immediately legible on the start screen.
+  - For larger graphs ($N > 35$), nodes with high degree (`node.deg >= 5 || node.deg >= Math.max(3, Math.round(maxDeg * 0.35))`) are assigned `labelVisibility: "visible"`. In zoomed-out views, these major hubs act like capital cities on a world map.
 - **Hover & Selection Prominence**: Hovering or selecting any node assigns `labelVisibility: "visible"`, elevated font size (`13px`), and contrast background chip to that node and all its direct neighbors, while connected edges illuminate.
-- **Spatial Collision Grid on Zoom**: Normal nodes receive `labelVisibility: "auto"`. Combined with `labelRenderedSizeThreshold: 8.5`, `labelDensity: 0.8`, and `labelGridCellSize: 120`, labels remain hidden when zoomed out and progressively emerge into available space as the user zooms in, completely avoiding text collision.
+- **Spatial Collision Grid on Zoom**: Normal nodes receive `labelVisibility: "auto"`. Combined with `labelRenderedSizeThreshold: 3.5`, `labelDensity: 0.85`, and `labelGridCellSize: 100`, labels remain hidden when zoomed out and progressively emerge into available space as the user zooms in, completely avoiding text collision.
 
 ### 3. Strict WebGL Visibility Reducers
 In `reduceNode` and `reduceEdge`:
@@ -78,9 +80,19 @@ In `reduceNode` and `reduceEdge`:
 This ensures Sigma's WebGL shaders discard the geometry entirely.
 
 ### 4. D3-Force Physics & Spring Dragging
-- `GraphView` runs a live `forceSimulation(this.nodes)` with many-body charge repulsion, distance-scaled links, collision radii (`n.r + 26`), and center pull.
+- Initial circular node placement is bounded to `Math.min(W, H) * 0.18`, avoiding edge clipping prior to layout relaxation.
+- `GraphView` runs a live `forceSimulation(this.nodes)` with scale-adaptive charge repulsion (low repulsion `-60` for isolated nodes `deg === 0` to prevent them from flying to canvas edges; `-140` to `-400` for connected clusters), cohesive centering force (`strength(0.22)`), collision radii (`n.r + 24`), and distance-scaled links.
 - Sigma drag events (`nodeDragStart`, `nodeDrag`, `nodeDragEnd`) lock node coordinates (`fx`, `fy`) and re-heat alpha (`0.3`), producing realistic spring resistance.
 - Simulation ticks feed positions into Graphology attributes and trigger synchronized archipelago canvas updates.
+
+### 5. Center Real Estate Viewport Auto-Framing (75% Center Real Estate)
+On initial load and when triggering view resets (`resetView()`):
+- Rather than a generic unscaled camera reset, the visualizer calculates the axis-aligned bounding box $[x_{\min}, x_{\max}] \times [y_{\min}, y_{\max}]$ across all currently visible nodes.
+- Determines the centroid $(\bar{x}, \bar{y})$ and converts it to framed graph space via `this.sigma.graphToFramedGraph({ x: midX, y: midY })`.
+- Projects the bounding box corners into viewport coordinates at reference ratio $1.0$ to determine the current pixel span $(\text{boxW}, \text{boxH})$.
+- Computes the target camera zoom ratio:
+  $$r_{\text{target}} = \text{clamp}\left(\max\left(\frac{\text{boxW}}{W \times 0.75}, \frac{\text{boxH}}{H \times 0.75}\right), 0.15, 2.5\right)$$
+- Sets the camera state to $(x_{\text{framed}}, y_{\text{framed}}, r_{\text{target}})$, ensuring the visible graph comfortably occupies exactly ~75% of the center real estate across all viewport dimensions.
 
 ## Status
 Accepted and Implemented.

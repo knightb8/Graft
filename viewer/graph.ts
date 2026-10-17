@@ -150,6 +150,8 @@ export class GraphView {
   showTransitive = true;
   showOwners = true;
   onSelect: (id: string | null) => void = () => {};
+  cachedVisibleCount = 0;
+  cachedMaxDeg = 0;
 
   constructor(container: HTMLElement | SVGElement) {
     if (container instanceof SVGElement) {
@@ -170,10 +172,10 @@ export class GraphView {
         renderLabels: true,
         renderEdgeLabels: false,
         enableNodeDrag: true,
-        stagePadding: 50,
-        labelRenderedSizeThreshold: 8.5,
-        labelDensity: 0.8,
-        labelGridCellSize: 120,
+        stagePadding: 45,
+        labelRenderedSizeThreshold: 3.5,
+        labelDensity: 0.85,
+        labelGridCellSize: 100,
         itemSizesReference: "screen",
         zoomToSizeRatioFunction: Math.sqrt,
         autoRescale: "once",
@@ -306,8 +308,8 @@ export class GraphView {
         scope,
         deg: d,
         r: 4 + Math.min(10, Math.sqrt(d) * 2),
-        x: p?.x ?? (Math.cos(angle) * Math.min(W, H) * 0.35),
-        y: p?.y ?? (Math.sin(angle) * Math.min(W, H) * 0.35),
+        x: p?.x ?? (Math.cos(angle) * Math.min(W, H) * 0.18),
+        y: p?.y ?? (Math.sin(angle) * Math.min(W, H) * 0.18),
       };
     });
 
@@ -324,12 +326,23 @@ export class GraphView {
     this.sim?.stop();
 
     this.sim = forceSimulation(this.nodes)
-      .force("charge", forceManyBody().strength((n: any) => -300 - Math.min(350, (n.deg ?? 0) * 25)).distanceMax(1800))
-      .force("link", forceLink(simLinks as any)
-        .distance((l: any) => (REST[famOf(l.relation)] ?? 110) * 1.5)
-        .strength(0.35))
-      .force("center", forceCenter(0, 0).strength(0.08))
-      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 26).strength(0.85).iterations(2))
+      .force(
+        "charge",
+        forceManyBody()
+          .strength((n: any) => {
+            const d = n.deg ?? 0;
+            return d === 0 ? -60 : -140 - Math.min(260, d * 20);
+          })
+          .distanceMax(1200),
+      )
+      .force(
+        "link",
+        forceLink(simLinks as any)
+          .distance((l: any) => (REST[famOf(l.relation)] ?? 90) * 1.1)
+          .strength(0.4),
+      )
+      .force("center", forceCenter(0, 0).strength(0.22))
+      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 24).strength(0.85).iterations(2))
       .alpha(0.8)
       .alphaDecay(0.02);
 
@@ -423,7 +436,12 @@ export class GraphView {
     const isHovered = Boolean(this.hovered && nodeId === this.hovered);
     const isHoverNeighbor = Boolean(this.hovered && this.hoverNeighbors.has(nodeId));
     const isSearchHit = Boolean(q && node.name.toLowerCase().includes(q));
-    const isLandmark = node.deg >= 6;
+    const totalVisible = this.cachedVisibleCount || this.nodes.length;
+    const maxDeg = this.cachedMaxDeg;
+    const isLandmark =
+      totalVisible <= 35 ||
+      node.deg >= 5 ||
+      (totalVisible > 35 && node.deg >= Math.max(3, Math.round(maxDeg * 0.35)));
 
     if (this.selected) {
       if (isSelected) {
@@ -593,6 +611,17 @@ export class GraphView {
 
   /** Re-apply all style attributes (theme, filters, focus, search). */
   restyle(): void {
+    let visCount = 0;
+    let maxD = 0;
+    for (const n of this.nodes) {
+      if (this.isNodeShown(n)) {
+        visCount++;
+        if (n.deg > maxD) maxD = n.deg;
+      }
+    }
+    this.cachedVisibleCount = visCount;
+    this.cachedMaxDeg = maxD;
+
     this.neighbors.clear();
     if (this.selected && this.graph.hasNode(this.selected)) {
       this.graph.forEachNeighbor(this.selected, (neighbor) => {
@@ -651,10 +680,18 @@ export class GraphView {
     const attrs = this.graph.getNodeAttributes(id);
     this.select(id);
     const camera = this.sigma.getCamera();
-    camera.animate(
-      { x: attrs.x, y: attrs.y, ratio: Math.min(camera.ratio, 0.4) },
-      { duration: 400 },
-    );
+    try {
+      const framed = this.sigma.graphToFramedGraph({ x: attrs.x, y: attrs.y });
+      camera.animate(
+        { x: framed.x, y: framed.y, ratio: Math.min(camera.ratio, 0.45) },
+        { duration: 400 },
+      );
+    } catch {
+      camera.animate(
+        { x: attrs.x, y: attrs.y, ratio: Math.min(camera.ratio, 0.45) },
+        { duration: 400 },
+      );
+    }
   }
 
   isNodeShown(n: SimNode): boolean {
@@ -683,7 +720,59 @@ export class GraphView {
 
   resetView(): void {
     const camera = this.sigma.getCamera();
-    camera.reset();
+    const visibleNodes = this.nodes.filter((n) => this.isNodeShown(n));
+    if (visibleNodes.length === 0 || !this.container) {
+      camera.reset();
+      return;
+    }
+
+    try {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+
+      for (const n of visibleNodes) {
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+      }
+
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+      const framedCenter = this.sigma.graphToFramedGraph({ x: midX, y: midY });
+
+      const W = this.container.clientWidth || 800;
+      const H = this.container.clientHeight || 600;
+
+      // Project bounds to viewport at reference camera ratio 1.0
+      const pMin = this.sigma.graphToViewport(
+        { x: minX, y: minY },
+        { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
+      );
+      const pMax = this.sigma.graphToViewport(
+        { x: maxX, y: maxY },
+        { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
+      );
+
+      const currentW = Math.max(10, Math.abs(pMax.x - pMin.x));
+      const currentH = Math.max(10, Math.abs(pMax.y - pMin.y));
+
+      // Desired coverage is 75% of center real estate
+      const targetW = W * 0.75;
+      const targetH = H * 0.75;
+      const targetRatio = Math.max(0.15, Math.min(2.5, Math.max(currentW / targetW, currentH / targetH)));
+
+      camera.setState({
+        x: framedCenter.x,
+        y: framedCenter.y,
+        ratio: targetRatio,
+        angle: 0,
+      });
+    } catch {
+      camera.reset();
+    }
   }
 
   reheat(): void {
