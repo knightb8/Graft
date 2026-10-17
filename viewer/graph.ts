@@ -15,7 +15,7 @@
 import Sigma from "sigma";
 import { MultiDirectedGraph } from "graphology";
 import {
-  forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide,
+  forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY,
   type Simulation, type SimulationNodeDatum,
 } from "d3-force";
 import {
@@ -152,6 +152,7 @@ export class GraphView {
   onSelect: (id: string | null) => void = () => {};
   cachedVisibleCount = 0;
   cachedMaxDeg = 0;
+  landmarkSet = new Set<string>();
 
   constructor(container: HTMLElement | SVGElement) {
     if (container instanceof SVGElement) {
@@ -172,13 +173,13 @@ export class GraphView {
         renderLabels: true,
         renderEdgeLabels: false,
         enableNodeDrag: true,
-        stagePadding: 45,
-        labelRenderedSizeThreshold: 3.5,
-        labelDensity: 0.85,
-        labelGridCellSize: 100,
+        stagePadding: 50,
+        labelRenderedSizeThreshold: 8.0,
+        labelDensity: 0.75,
+        labelGridCellSize: 110,
         itemSizesReference: "screen",
         zoomToSizeRatioFunction: Math.sqrt,
-        autoRescale: "once",
+        autoRescale: false,
         minEdgeThickness: 1,
       },
       nodeReducer: (nodeId, data) => this.reduceNode(nodeId, data),
@@ -294,6 +295,7 @@ export class GraphView {
     const W = this.container.clientWidth || 800;
     const H = this.container.clientHeight || 600;
 
+    const initialR = graph.nodes.length <= 25 ? 90 : Math.min(W, H) * 0.20;
     this.nodes = graph.nodes.map((n, i) => {
       const p = prevPositions.get(n.id);
       const angle = (i / Math.max(1, graph.nodes.length)) * Math.PI * 2;
@@ -308,8 +310,8 @@ export class GraphView {
         scope,
         deg: d,
         r: 4 + Math.min(10, Math.sqrt(d) * 2),
-        x: p?.x ?? (Math.cos(angle) * Math.min(W, H) * 0.18),
-        y: p?.y ?? (Math.sin(angle) * Math.min(W, H) * 0.18),
+        x: p?.x ?? (Math.cos(angle) * initialR),
+        y: p?.y ?? (Math.sin(angle) * initialR),
       };
     });
 
@@ -331,9 +333,9 @@ export class GraphView {
         forceManyBody()
           .strength((n: any) => {
             const d = n.deg ?? 0;
-            return d === 0 ? -60 : -140 - Math.min(260, d * 20);
+            return d === 0 ? -40 : -80 - Math.min(220, d * 18);
           })
-          .distanceMax(1200),
+          .distanceMax(800),
       )
       .force(
         "link",
@@ -341,13 +343,15 @@ export class GraphView {
           .distance((l: any) => (REST[famOf(l.relation)] ?? 90) * 1.1)
           .strength(0.4),
       )
-      .force("center", forceCenter(0, 0).strength(0.22))
-      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 24).strength(0.85).iterations(2))
+      .force("x", forceX(0).strength((n: any) => (n.deg === 0 ? 0.09 : 0.035)))
+      .force("y", forceY(0).strength((n: any) => (n.deg === 0 ? 0.09 : 0.035)))
+      .force("center", forceCenter(0, 0).strength(0.25))
+      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 20).strength(0.85).iterations(2))
       .alpha(0.8)
       .alphaDecay(0.02);
 
-    // Warm up the simulation synchronously with 45 fast ticks so nodes expand properly
-    for (let i = 0; i < 45; i++) {
+    // Warm up the simulation synchronously with 60 fast ticks so nodes expand properly
+    for (let i = 0; i < 60; i++) {
       this.sim.tick();
     }
 
@@ -436,12 +440,7 @@ export class GraphView {
     const isHovered = Boolean(this.hovered && nodeId === this.hovered);
     const isHoverNeighbor = Boolean(this.hovered && this.hoverNeighbors.has(nodeId));
     const isSearchHit = Boolean(q && node.name.toLowerCase().includes(q));
-    const totalVisible = this.cachedVisibleCount || this.nodes.length;
-    const maxDeg = this.cachedMaxDeg;
-    const isLandmark =
-      totalVisible <= 35 ||
-      node.deg >= 5 ||
-      (totalVisible > 35 && node.deg >= Math.max(3, Math.round(maxDeg * 0.35)));
+    const isLandmark = this.landmarkSet.has(nodeId);
 
     if (this.selected) {
       if (isSelected) {
@@ -480,15 +479,11 @@ export class GraphView {
         highlighted = true;
         labelBg = cvar("--chip");
         size = data.size + 2;
-      } else if (isLandmark) {
-        labelVisibility = "visible";
-        labelSize = 11;
-        opacity = Math.max(opacity, 0.85);
       } else {
-        opacity = match ? 0.70 : 0.15;
+        opacity = match ? 0.35 : 0.12;
         labelColor = cvar("--muted");
         labelSize = 10;
-        labelVisibility = "auto";
+        labelVisibility = "hidden";
       }
     } else if (isSearchHit) {
       labelVisibility = "visible";
@@ -498,6 +493,7 @@ export class GraphView {
     } else if (isLandmark) {
       labelVisibility = "visible";
       labelSize = 11;
+      opacity = Math.max(opacity, 0.95);
     } else {
       labelColor = cvar("--muted");
       labelSize = 10.5;
@@ -613,14 +609,32 @@ export class GraphView {
   restyle(): void {
     let visCount = 0;
     let maxD = 0;
+    const visibleNodes: SimNode[] = [];
     for (const n of this.nodes) {
       if (this.isNodeShown(n)) {
         visCount++;
+        visibleNodes.push(n);
         if (n.deg > maxD) maxD = n.deg;
       }
     }
     this.cachedVisibleCount = visCount;
     this.cachedMaxDeg = maxD;
+
+    this.landmarkSet.clear();
+    if (visCount <= 25) {
+      for (const n of visibleNodes) {
+        this.landmarkSet.add(n.id);
+      }
+    } else {
+      const minHubDeg = Math.max(3, Math.min(6, Math.round(maxD * 0.4)));
+      const sortedByDeg = [...visibleNodes]
+        .filter((n) => n.deg >= minHubDeg)
+        .sort((a, b) => b.deg - a.deg);
+      const topCount = Math.min(12, sortedByDeg.length);
+      for (let i = 0; i < topCount; i++) {
+        this.landmarkSet.add(sortedByDeg[i].id);
+      }
+    }
 
     this.neighbors.clear();
     if (this.selected && this.graph.hasNode(this.selected)) {
@@ -741,32 +755,20 @@ export class GraphView {
 
       const midX = (minX + maxX) / 2;
       const midY = (minY + maxY) / 2;
-      const framedCenter = this.sigma.graphToFramedGraph({ x: midX, y: midY });
+      const spanW = Math.max(80, maxX - minX);
+      const spanH = Math.max(80, maxY - minY);
 
       const W = this.container.clientWidth || 800;
       const H = this.container.clientHeight || 600;
 
-      // Project bounds to viewport at reference camera ratio 1.0
-      const pMin = this.sigma.graphToViewport(
-        { x: minX, y: minY },
-        { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
-      );
-      const pMax = this.sigma.graphToViewport(
-        { x: maxX, y: maxY },
-        { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
-      );
-
-      const currentW = Math.max(10, Math.abs(pMax.x - pMin.x));
-      const currentH = Math.max(10, Math.abs(pMax.y - pMin.y));
-
       // Desired coverage is 75% of center real estate
       const targetW = W * 0.75;
       const targetH = H * 0.75;
-      const targetRatio = Math.max(0.15, Math.min(2.5, Math.max(currentW / targetW, currentH / targetH)));
+      const targetRatio = Math.max(0.2, Math.min(2.5, Math.max(spanW / targetW, spanH / targetH)));
 
       camera.setState({
-        x: framedCenter.x,
-        y: framedCenter.y,
+        x: midX,
+        y: midY,
         ratio: targetRatio,
         angle: 0,
       });

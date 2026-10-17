@@ -241,6 +241,7 @@ test("Smart LOD label rules prioritize landmarks, hover, and search hits", () =>
     deg: number;
     totalVisible: number;
     maxDeg: number;
+    isLandmark: boolean;
     hovered: string | null;
     hoverNeighbors: Set<string>;
     selected: string | null;
@@ -250,52 +251,94 @@ test("Smart LOD label rules prioritize landmarks, hover, and search hits", () =>
   function computeLODLabel(input: NodeLODInput): { labelVisibility: "visible" | "auto" | "hidden"; elevated: boolean } {
     if (input.selected) {
       if (input.id === input.selected) return { labelVisibility: "visible", elevated: true };
+      if (input.hoverNeighbors.has(input.id)) return { labelVisibility: "visible", elevated: true };
       return { labelVisibility: "hidden", elevated: false };
     }
     if (input.hovered) {
       if (input.id === input.hovered) return { labelVisibility: "visible", elevated: true };
       if (input.hoverNeighbors.has(input.id)) return { labelVisibility: "visible", elevated: true };
+      return { labelVisibility: "hidden", elevated: false };
     }
     if (input.query && input.id.toLowerCase().includes(input.query.toLowerCase())) {
       return { labelVisibility: "visible", elevated: true };
     }
-    const isLandmark =
-      input.totalVisible <= 35 ||
-      input.deg >= 5 ||
-      (input.totalVisible > 35 && input.deg >= Math.max(3, Math.round(input.maxDeg * 0.35)));
-    if (isLandmark) {
-      return { labelVisibility: "visible", elevated: false }; // landmark hub / small-graph marker
+    if (input.isLandmark) {
+      return { labelVisibility: "visible", elevated: false };
     }
-    return { labelVisibility: "auto", elevated: false }; // spatial grid zoom
+    return { labelVisibility: "auto", elevated: false };
+  }
+
+  function computeLandmarkSet(nodes: Array<{ id: string; deg: number }>): Set<string> {
+    const set = new Set<string>();
+    if (nodes.length <= 25) {
+      for (const n of nodes) set.add(n.id);
+    } else {
+      let maxD = 0;
+      for (const n of nodes) if (n.deg > maxD) maxD = n.deg;
+      const minHubDeg = Math.max(3, Math.min(6, Math.round(maxD * 0.4)));
+      const sorted = [...nodes].filter((n) => n.deg >= minHubDeg).sort((a, b) => b.deg - a.deg);
+      const topCount = Math.min(12, sorted.length);
+      for (let i = 0; i < topCount; i++) set.add(sorted[i].id);
+    }
+    return set;
   }
 
   // 1. Small graph (8 nodes total, e.g. concept graph) -> ALL visible markers have labels
-  const smallGraphNode = computeLODLabel({ id: "concept", deg: 1, totalVisible: 8, maxDeg: 2, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  const smallNodes = Array.from({ length: 8 }, (_, i) => ({ id: `concept-${i}`, deg: 0 }));
+  const smallLandmarks = computeLandmarkSet(smallNodes);
+  assert.equal(smallLandmarks.size, 8, "All 8 nodes in small concept graph are landmarks");
+  const smallGraphNode = computeLODLabel({
+    id: "concept-0", deg: 0, totalVisible: 8, maxDeg: 0, isLandmark: smallLandmarks.has("concept-0"),
+    hovered: null, hoverNeighbors: new Set(), selected: null, query: "",
+  });
   assert.equal(smallGraphNode.labelVisibility, "visible", "Small graphs render 100% of visible markers with visible labels");
   assert.equal(smallGraphNode.elevated, false);
 
-  // 2. Large graph (100 nodes, maxDeg 14) low-degree node -> "auto"
-  const largeNormal = computeLODLabel({ id: "leaf", deg: 1, totalVisible: 100, maxDeg: 14, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  // 2. Large graph (100 nodes, maxDeg 10): only top 12 hubs get visible, rest get auto
+  const largeNodes = Array.from({ length: 100 }, (_, i) => ({ id: `node-${i}`, deg: i < 20 ? 10 : 1 }));
+  const largeLandmarks = computeLandmarkSet(largeNodes);
+  assert.equal(largeLandmarks.size, 12, "Large graph caps landmark labels to top 12 hubs");
+
+  const largeNormal = computeLODLabel({
+    id: "node-50", deg: 1, totalVisible: 100, maxDeg: 10, isLandmark: largeLandmarks.has("node-50"),
+    hovered: null, hoverNeighbors: new Set(), selected: null, query: "",
+  });
   assert.equal(largeNormal.labelVisibility, "auto");
   assert.equal(largeNormal.elevated, false);
 
-  // 3. Large graph landmark hub (deg 6 >= 5 and >= 14 * 0.35 = 5) -> "visible"
-  const landmark = computeLODLabel({ id: "hub", deg: 6, totalVisible: 100, maxDeg: 14, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  const landmark = computeLODLabel({
+    id: "node-0", deg: 10, totalVisible: 100, maxDeg: 10, isLandmark: largeLandmarks.has("node-0"),
+    hovered: null, hoverNeighbors: new Set(), selected: null, query: "",
+  });
   assert.equal(landmark.labelVisibility, "visible");
   assert.equal(landmark.elevated, false);
 
-  // 4. Hovered node -> "visible" & elevated
-  const hovered = computeLODLabel({ id: "foo", deg: 1, totalVisible: 100, maxDeg: 14, hovered: "foo", hoverNeighbors: new Set(), selected: null, query: "" });
+  // 3. Hovered node and its neighbor -> "visible" & elevated; unhovered background node -> "hidden"
+  const hovered = computeLODLabel({
+    id: "foo", deg: 1, totalVisible: 100, maxDeg: 10, isLandmark: false,
+    hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "",
+  });
   assert.equal(hovered.labelVisibility, "visible");
   assert.equal(hovered.elevated, true);
 
-  // 5. Hover neighbor -> "visible" & elevated
-  const hoverNbr = computeLODLabel({ id: "bar", deg: 1, totalVisible: 100, maxDeg: 14, hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "" });
+  const hoverNbr = computeLODLabel({
+    id: "bar", deg: 1, totalVisible: 100, maxDeg: 10, isLandmark: false,
+    hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "",
+  });
   assert.equal(hoverNbr.labelVisibility, "visible");
   assert.equal(hoverNbr.elevated, true);
 
-  // 6. Search hit -> "visible" & elevated
-  const hit = computeLODLabel({ id: "auth_service", deg: 1, totalVisible: 100, maxDeg: 14, hovered: null, hoverNeighbors: new Set(), selected: null, query: "auth" });
+  const unhovered = computeLODLabel({
+    id: "baz", deg: 1, totalVisible: 100, maxDeg: 10, isLandmark: true,
+    hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "",
+  });
+  assert.equal(unhovered.labelVisibility, "hidden", "Non-hovered nodes are hidden during inspection to clear visual noise");
+
+  // 4. Search hit -> "visible" & elevated
+  const hit = computeLODLabel({
+    id: "auth_service", deg: 1, totalVisible: 100, maxDeg: 10, isLandmark: false,
+    hovered: null, hoverNeighbors: new Set(), selected: null, query: "auth",
+  });
   assert.equal(hit.labelVisibility, "visible");
   assert.equal(hit.elevated, true);
 });
@@ -310,7 +353,7 @@ test("Center real estate auto-framing calculates camera ratio for 75% viewport c
   ): number {
     const targetW = viewportW * targetCoverage;
     const targetH = viewportH * targetCoverage;
-    return Math.max(0.15, Math.min(2.5, Math.max(boxW / targetW, boxH / targetH)));
+    return Math.max(0.2, Math.min(2.5, Math.max(boxW / targetW, boxH / targetH)));
   }
 
   const W = 1000;
@@ -337,7 +380,7 @@ test("Center real estate auto-framing calculates camera ratio for 75% viewport c
   assert.equal(extremeLarge, 2.5);
 
   const extremeTiny = computeFramingRatio(1, 1, W, H);
-  assert.equal(extremeTiny, 0.15);
+  assert.equal(extremeTiny, 0.2);
 });
 
 test("Adaptive neighborhood cohesion scales with graph size and rejects isolated nodes", () => {

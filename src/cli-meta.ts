@@ -67,7 +67,12 @@ export function getNpmViewVersion(pkgName: string = PKG_NAME, timeoutMs = 2000):
 
 /** Pure formatter for `graft version` — no I/O, easy to unit-test. */
 export function formatVersionReport(current: string, latest: NpmViewResult): string {
-  const lines = [`graft ${current}`];
+  const isFork = current.includes("knightb8") || current.includes("fork");
+  const lines = [`graft ${current}${isFork ? " (knightb8/Graft)" : ""}`];
+  if (isFork) {
+    lines.push(`fork upstream: https://github.com/NanoNets/context-graph-engine (npm latest: ${latest.version ?? "unknown"})`);
+    return lines.join("\n");
+  }
   if (!latest.ok || !latest.version) {
     lines.push("latest: unreachable (offline?)");
   } else if (latest.version === current) {

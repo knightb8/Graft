@@ -208,9 +208,7 @@ function setTab(tab: Tab): void {
         : "No context graph — run <code>graft init</code> first."));
     } else {
       empty.hidden = true;
-      view.resetView();
       view.setData(graph, graphTab());
-      view.reheat();
       picker.setGraph(graph);
     }
   }
