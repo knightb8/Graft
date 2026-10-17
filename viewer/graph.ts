@@ -757,10 +757,11 @@ export class GraphView {
       const cx = sumX / pts.length;
       const cy = sumY / pts.length;
 
-      // Calculate 90th percentile distance from centroid to prevent outlier ballooning
+      // Calculate 85th percentile distance from centroid to prevent outlier ballooning
       const dists = pts.map((p) => Math.hypot(p.x - cx, p.y - cy)).sort((a, b) => a - b);
-      const p90 = dists[Math.min(dists.length - 1, Math.floor(dists.length * 0.9))];
-      const maxDist = Math.max(25, p90);
+      const p85Idx = Math.min(dists.length - 1, Math.floor((dists.length - 1) * 0.85));
+      const p85 = dists[p85Idx];
+      const maxDist = Math.max(25, p85);
       const bloomRadius = Math.max(50, maxDist + 35);
 
       const isHoveredCluster = Boolean(

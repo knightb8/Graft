@@ -154,3 +154,139 @@ test("Sigma display contracts enforce visibility: hidden on filtered elements", 
   assert.equal(visibleResult.labelVisibility, "auto");
 });
 
+test("Archipelago cluster key extraction groups nodes by semantic subsystem", () => {
+  function clusterKeyOfNode(node: { id: string; sources?: string[]; scope: string }): { key: string; name: string } {
+    if (node.sources && node.sources.length > 0) {
+      const rawPath = node.sources[0].split(" · ")[0].trim();
+      const parts = rawPath.replace(/\\/g, "/").split("/");
+      if (parts.length > 1) {
+        const dir = parts.slice(0, parts.length > 2 ? 2 : 1).join("/");
+        return { key: dir, name: dir };
+      }
+    }
+    if (node.id.includes("/")) {
+      const parts = node.id.split("#")[0].replace(/\\/g, "/").split("/");
+      if (parts.length > 1) {
+        const dir = parts.slice(0, parts.length > 2 ? 2 : 1).join("/");
+        return { key: dir, name: dir };
+      }
+    }
+    return { key: node.scope, name: node.scope.toUpperCase() };
+  }
+
+  // Multi-tier source paths
+  assert.deepEqual(
+    clusterKeyOfNode({ id: "node1", sources: ["src/graph/index.ts · 1-10"], scope: "code" }),
+    { key: "src/graph", name: "src/graph" },
+  );
+  assert.deepEqual(
+    clusterKeyOfNode({ id: "node2", sources: ["features/parsing/core/gherkin.feature"], scope: "specs" }),
+    { key: "features/parsing", name: "features/parsing" },
+  );
+  assert.deepEqual(
+    clusterKeyOfNode({ id: "node3", sources: ["docs/adr/0001-init.md"], scope: "docs" }),
+    { key: "docs/adr", name: "docs/adr" },
+  );
+  assert.deepEqual(
+    clusterKeyOfNode({ id: "node4", sources: ["src/cli.ts · 1-5"], scope: "code" }),
+    { key: "src", name: "src" },
+  );
+
+  // Fallback to id or scope
+  assert.deepEqual(
+    clusterKeyOfNode({ id: "src/graph/model.ts#Node", scope: "code" }),
+    { key: "src/graph", name: "src/graph" },
+  );
+  assert.deepEqual(
+    clusterKeyOfNode({ id: "GlobalSymbol", scope: "specs" }),
+    { key: "specs", name: "SPECS" },
+  );
+});
+
+test("Archipelago bounding calculation uses 90th percentile to protect against outlier ballooning", () => {
+  // 9 tightly clustered points around (0,0) and 1 extreme outlier at (500, 500)
+  const pts = [
+    { x: 0, y: 0 },
+    { x: 5, y: 5 },
+    { x: -5, y: -5 },
+    { x: 10, y: -10 },
+    { x: -10, y: 10 },
+    { x: 15, y: 5 },
+    { x: -5, y: 15 },
+    { x: 8, y: -8 },
+    { x: -8, y: 8 },
+    { x: 500, y: 500 }, // Outlier
+  ];
+
+  let sumX = 0, sumY = 0;
+  for (const p of pts) { sumX += p.x; sumY += p.y; }
+  const cx = sumX / pts.length;
+  const cy = sumY / pts.length;
+
+  const dists = pts.map((p) => Math.hypot(p.x - cx, p.y - cy)).sort((a, b) => a - b);
+  const p85Idx = Math.min(dists.length - 1, Math.floor((dists.length - 1) * 0.85));
+  const p85 = dists[p85Idx];
+
+  // Max dist across all points would be ~635px (ballooning the bloom across entire screen)
+  const absoluteMax = dists[dists.length - 1];
+  assert.ok(absoluteMax > 600, "Outlier causes extreme absolute distance");
+
+  // 85th percentile stays tight around the core cluster (~80px)
+  assert.ok(p85 < 100, `85th percentile distance (${p85}) remains compact`);
+});
+
+test("Smart LOD label rules prioritize landmarks, hover, and search hits", () => {
+  interface NodeLODInput {
+    id: string;
+    deg: number;
+    hovered: string | null;
+    hoverNeighbors: Set<string>;
+    selected: string | null;
+    query: string;
+  }
+
+  function computeLODLabel(input: NodeLODInput): { labelVisibility: "visible" | "auto" | "hidden"; elevated: boolean } {
+    if (input.selected) {
+      if (input.id === input.selected) return { labelVisibility: "visible", elevated: true };
+      return { labelVisibility: "hidden", elevated: false };
+    }
+    if (input.hovered) {
+      if (input.id === input.hovered) return { labelVisibility: "visible", elevated: true };
+      if (input.hoverNeighbors.has(input.id)) return { labelVisibility: "visible", elevated: true };
+    }
+    if (input.query && input.id.toLowerCase().includes(input.query.toLowerCase())) {
+      return { labelVisibility: "visible", elevated: true };
+    }
+    if (input.deg >= 6) {
+      return { labelVisibility: "visible", elevated: false }; // landmark hub
+    }
+    return { labelVisibility: "auto", elevated: false }; // spatial grid zoom
+  }
+
+  // 1. Normal unhovered low-degree node -> "auto"
+  const normal = computeLODLabel({ id: "foo", deg: 2, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  assert.equal(normal.labelVisibility, "auto");
+  assert.equal(normal.elevated, false);
+
+  // 2. Landmark high-degree hub -> "visible"
+  const landmark = computeLODLabel({ id: "hub", deg: 8, hovered: null, hoverNeighbors: new Set(), selected: null, query: "" });
+  assert.equal(landmark.labelVisibility, "visible");
+  assert.equal(landmark.elevated, false);
+
+  // 3. Hovered node -> "visible" & elevated
+  const hovered = computeLODLabel({ id: "foo", deg: 2, hovered: "foo", hoverNeighbors: new Set(), selected: null, query: "" });
+  assert.equal(hovered.labelVisibility, "visible");
+  assert.equal(hovered.elevated, true);
+
+  // 4. Hover neighbor -> "visible" & elevated
+  const hoverNbr = computeLODLabel({ id: "bar", deg: 1, hovered: "foo", hoverNeighbors: new Set(["bar"]), selected: null, query: "" });
+  assert.equal(hoverNbr.labelVisibility, "visible");
+  assert.equal(hoverNbr.elevated, true);
+
+  // 5. Search hit -> "visible" & elevated
+  const hit = computeLODLabel({ id: "auth_service", deg: 1, hovered: null, hoverNeighbors: new Set(), selected: null, query: "auth" });
+  assert.equal(hit.labelVisibility, "visible");
+  assert.equal(hit.elevated, true);
+});
+
+
