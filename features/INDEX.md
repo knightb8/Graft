@@ -9,6 +9,7 @@
 | **graph** | **core** | 12 | `graph/core/markdown_ast-12.feature` | Markdown AST Support |
 | **graph** | **core** | 14 | `graph/core/scope_directory_filter-14.feature` | Tripartite Scope and Directory Filtering for Context Graph |
 | **graph** | **core** | 11 | `graph/core/semantic_edges-11.feature` | Tripartite Semantic Edges |
+| **parsing** | **core** | 15 | `parsing/core/asciidoc_ast_support-15.feature` | AsciiDoc AST Support, Includes, and References |
 | **parsing** | **core** | 10 | `parsing/core/gherkin_ast_support-10.feature` | Gherkin AST and Call Graph Extraction |
 | **parsing** | **core** | 13 | `parsing/core/gherkin_file_references-13.feature` | Gherkin File References |
 | **parsing** | **core** | 14 | `parsing/core/gherkin_semantic_links-14.feature` | Gherkin Semantic Links |

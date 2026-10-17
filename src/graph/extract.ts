@@ -1,4 +1,5 @@
 import { extractGherkin } from "./gherkin.js";
+import { extractAsciiDoc } from "./asciidoc.js";
 /**
  * Tier-1 extraction: source file → {@link NodeV1}[] + raw edges, via tree-sitter.
  *
@@ -21,7 +22,7 @@ import { contentHash } from "../util/id.js";
 import { collectBindings, goReceiverVarOf, resolveRecvType, type FileBindings } from "./bindings.js";
 import type { Kind, NodeV1, Relation } from "./types.js";
 
-export type Language = "typescript" | "tsx" | "python" | "go" | "java" | "kotlin" | "swift" | "php" | "r" | "gherkin";
+export type Language = "typescript" | "tsx" | "python" | "go" | "java" | "kotlin" | "swift" | "php" | "r" | "gherkin" | "asciidoc";
 
 /**
  * Extension → the tree-sitter grammar that parses it, and the label a human expects
@@ -59,6 +60,8 @@ const EXTENSIONS: ReadonlyArray<{ ext: string; grammar: Language; label: string 
   // both `.R` (the conventional case in real R codebases) and `.r`.
   { ext: ".r", grammar: "r", label: "r" },
   { ext: ".feature", grammar: "gherkin", label: "gherkin" },
+  { ext: ".adoc", grammar: "asciidoc", label: "asciidoc" },
+  { ext: ".asciidoc", grammar: "asciidoc", label: "asciidoc" },
 ];
 
 function entryFor(path: string): (typeof EXTENSIONS)[number] | undefined {
@@ -276,6 +279,7 @@ const KINDS_BY_LANG: Record<Language, Record<string, Kind>> = {
   swift: SWIFT_KINDS,
   php: PHP_KINDS,
   gherkin: {},
+  asciidoc: {},
 };
 
 /**
@@ -303,6 +307,7 @@ const CALL_TYPES: Record<Language, ReadonlySet<string>> = {
   ]),
   r: new Set(["call"]),
   gherkin: new Set(),
+  asciidoc: new Set(),
 };
 
 const FUNCTION_VALUE_TYPES = new Set([
@@ -326,6 +331,7 @@ const GRAMMARS: Record<Language, unknown> = {
   swift: Swift,
   php: PHP.php,
   gherkin: null,
+  asciidoc: null,
 };
 
 export interface WalkCtx {
@@ -391,6 +397,7 @@ function parseSource(source: string): Parser.SyntaxNode {
 
 export function extractFile(rel: string, source: string, lang: Language): ExtractResult {
   if (lang === "gherkin") return extractGherkin(rel, source);
+  if (lang === "asciidoc") return extractAsciiDoc(rel, source);
   parser.setLanguage(GRAMMARS[lang] as never);
   const root = parseSource(source);
   const bindings = collectBindings(root, lang);

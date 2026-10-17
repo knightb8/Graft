@@ -26,9 +26,14 @@ export function scopeOfPath(filePath: string): "code" | "docs" | "specs" {
   if (normalized.endsWith(".feature") || normalized.includes(".feature#")) {
     return "specs";
   }
-  // Markdown files and docs folders are documentation
+  // Markdown/AsciiDoc files and docs folders are documentation
   if (
+    normalized.endsWith(".adoc") ||
+    normalized.includes(".adoc#") ||
+    normalized.endsWith(".asciidoc") ||
+    normalized.includes(".asciidoc#") ||
     normalized.endsWith(".md") ||
+    normalized.includes(".md#") ||
     normalized.endsWith(".markdown") ||
     normalized.includes("/docs/") ||
     normalized.startsWith("docs/")
