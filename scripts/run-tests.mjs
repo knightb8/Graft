@@ -46,7 +46,7 @@ const gitEnv = {
 const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...files], {
   cwd: repoRoot,
   stdio: "inherit",
-  env: { ...process.env, ...gitEnv },
+  env: { ...process.env, ...gitEnv, LC_ALL: "C.UTF-8", LANG: "C.UTF-8" },
 });
 
 if (result.error) {

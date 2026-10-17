@@ -43,6 +43,7 @@ const git = (d: string, ...args: string[]): void => {
       ...process.env,
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_SYSTEM: '/dev/null',
+      XDG_CONFIG_HOME: '/dev/null',
       GIT_AUTHOR_NAME: 'graft test',
       GIT_AUTHOR_EMAIL: 'test@example.invalid',
       GIT_COMMITTER_NAME: 'graft test',

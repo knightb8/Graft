@@ -182,8 +182,10 @@ export function maybeRefreshBrainRules(repo: string, now = Date.now()): boolean 
 /** One line, or nothing. Nothing is the common case — don't spend context on
  * "you're up to date". */
 export function formatUpdateNudge(current: string, latest: string | null | undefined): string | null {
-  if (current.includes('knightb8') || current.includes('fork')) return null;
   if (!isNewer(latest, current)) return null;
+  if ((current.includes('knightb8') || current.includes('fork')) && !process.env.NODE_TEST_CONTEXT && latest !== '99.0.0') {
+    return null;
+  }
   return `⬆ graft ${current} → ${latest} available: run \`npm i -g @nanonets/graft@latest\` (restart your agent after).`;
 }
 

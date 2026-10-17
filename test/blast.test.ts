@@ -64,6 +64,7 @@ function builtRepo(): string {
     'import { total } from "./total.js";\nexport function report(xs: number[]): string {\n  return `sum=${total(xs)}`;\n}\n',
   );
   writeFileSync(join(d, "README.md"), "# fixture\n");
+  writeFileSync(join(d, "README.txt"), "# fixture unindexed\n");
 
   git(d, "init", "-b", "main");
   git(d, "config", "user.email", "test@example.com");
