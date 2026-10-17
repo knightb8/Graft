@@ -86,6 +86,21 @@ function colorWithAlpha(color: string, alpha: number): string {
   return color;
 }
 
+function parseColorToRgba(color: string, alpha: number): [number, number, number, number] {
+  if (color.startsWith("#")) {
+    const c = color.slice(1);
+    const num = parseInt(c.length === 3 ? c.split("").map((x) => x + x).join("") : c, 16);
+    return [((num >> 16) & 255) / 255, ((num >> 8) & 255) / 255, (num & 255) / 255, alpha];
+  }
+  if (color.startsWith("rgb")) {
+    const match = color.match(/\d+/g);
+    if (match && match.length >= 3) {
+      return [Number(match[0]) / 255, Number(match[1]) / 255, Number(match[2]) / 255, alpha];
+    }
+  }
+  return [0.22, 0.74, 0.97, alpha];
+}
+
 function clusterKeyOfNode(node: SimNode): { key: string; name: string } {
   if (node.sources && node.sources.length > 0) {
     const rawPath = node.sources[0].split(" · ")[0].trim();
@@ -115,8 +130,12 @@ export class GraphView {
   private nodes: SimNode[] = [];
   private nodeMap = new Map<string, SimNode>();
   private neighbors = new Set<string>();
-  private archCanvas: HTMLCanvasElement | null = null;
-  private archCtx: CanvasRenderingContext2D | null = null;
+  private archGL: WebGL2RenderingContext | null = null;
+  private archProgram: WebGLProgram | null = null;
+  private archQuadBuffer: WebGLBuffer | null = null;
+  private archInstanceBuffer: WebGLBuffer | null = null;
+  private archBadgeCanvas: HTMLCanvasElement | null = null;
+  private archBadgeCtx: CanvasRenderingContext2D | null = null;
 
   hovered: string | null = null;
   private hoverNeighbors = new Set<string>();
@@ -144,19 +163,6 @@ export class GraphView {
     }
     this.container.style.position = "relative";
 
-    // Setup archipelago background bloom canvas (rendered behind Sigma WebGL)
-    this.archCanvas = document.createElement("canvas");
-    this.archCanvas.className = "archipelago-canvas";
-    this.archCanvas.style.position = "absolute";
-    this.archCanvas.style.top = "0";
-    this.archCanvas.style.left = "0";
-    this.archCanvas.style.width = "100%";
-    this.archCanvas.style.height = "100%";
-    this.archCanvas.style.pointerEvents = "none";
-    this.archCanvas.style.zIndex = "0";
-    this.container.appendChild(this.archCanvas);
-    this.archCtx = this.archCanvas.getContext("2d");
-
     this.graph = new MultiDirectedGraph<NodeAttrs, EdgeAttrs>();
 
     this.sigma = new Sigma(this.graph, this.container, {
@@ -176,6 +182,27 @@ export class GraphView {
       nodeReducer: (nodeId, data) => this.reduceNode(nodeId, data),
       edgeReducer: (edgeId, data) => this.reduceEdge(edgeId, data),
     });
+
+    try {
+      this.archGL = this.sigma.createWebGLContext("archipelago", {
+        beforeLayer: "stage",
+        style: { pointerEvents: "none" },
+      });
+      this.initArchipelagoWebGL();
+    } catch {
+      this.archGL = null;
+    }
+
+    try {
+      this.archBadgeCanvas = this.sigma.createCanvas("archipelago-badges", {
+        beforeLayer: "mouse",
+        style: { pointerEvents: "none" },
+      });
+      this.archBadgeCtx = this.archBadgeCanvas.getContext("2d");
+    } catch {
+      this.archBadgeCanvas = null;
+      this.archBadgeCtx = null;
+    }
 
     this.sigma.on("clickNode", (event) => {
       this.select(event.node);
@@ -209,7 +236,6 @@ export class GraphView {
     });
 
     window.addEventListener("resize", () => {
-      this.resizeArchCanvas();
       this.drawArchipelago();
     });
 
@@ -360,7 +386,6 @@ export class GraphView {
 
     this.restyle();
     this.resetView();
-    this.resizeArchCanvas();
     this.drawArchipelago();
   }
 
@@ -667,58 +692,150 @@ export class GraphView {
 
   destroy(): void {
     this.sim?.stop();
-    this.archCanvas?.remove();
-    this.archCanvas = null;
-    this.archCtx = null;
+    if (this.archGL) {
+      if (this.archProgram) this.archGL.deleteProgram(this.archProgram);
+      if (this.archQuadBuffer) this.archGL.deleteBuffer(this.archQuadBuffer);
+      if (this.archInstanceBuffer) this.archGL.deleteBuffer(this.archInstanceBuffer);
+      this.archGL = null;
+      this.archProgram = null;
+    }
+    this.archBadgeCanvas = null;
+    this.archBadgeCtx = null;
     this.sigma.kill();
     this.graph.clear();
   }
 
-  private resizeArchCanvas(): void {
-    if (!this.archCanvas || !this.container) return;
-    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    const w = this.container.clientWidth || 800;
-    const h = this.container.clientHeight || 600;
-    const targetW = Math.round(w * dpr);
-    const targetH = Math.round(h * dpr);
-    if (this.archCanvas.width !== targetW || this.archCanvas.height !== targetH) {
-      this.archCanvas.width = targetW;
-      this.archCanvas.height = targetH;
-      this.archCanvas.style.width = `${w}px`;
-      this.archCanvas.style.height = `${h}px`;
+  private initArchipelagoWebGL(): void {
+    const gl = this.archGL;
+    if (!gl) return;
+
+    const vsSource = `#version 300 es
+    precision highp float;
+    layout(location = 0) in vec2 a_quad;
+    layout(location = 1) in vec2 a_center;
+    layout(location = 2) in float a_radius;
+    layout(location = 3) in vec4 a_color;
+    layout(location = 4) in float a_cohesion;
+
+    uniform vec2 u_resolution;
+
+    out vec2 v_uv;
+    out vec4 v_color;
+    out float v_cohesion;
+
+    void main() {
+      v_uv = a_quad;
+      v_color = a_color;
+      v_cohesion = a_cohesion;
+
+      vec2 pixelPos = a_center + a_quad * a_radius;
+      vec2 clip = (pixelPos / u_resolution) * 2.0 - 1.0;
+      gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+    }`;
+
+    const fsSource = `#version 300 es
+    precision highp float;
+    in vec2 v_uv;
+    in vec4 v_color;
+    in float v_cohesion;
+    out vec4 fragColor;
+
+    void main() {
+      float r2 = dot(v_uv, v_uv);
+      if (r2 > 1.0) discard;
+
+      // Soft Gaussian radiance with smooth edge falloff
+      float falloff = (1.0 - r2) * (1.0 - r2);
+      float glow = exp(-r2 * 2.5) * falloff;
+      float alpha = v_color.a * v_cohesion * glow;
+      fragColor = vec4(v_color.rgb * alpha, alpha);
+    }`;
+
+    const compileShader = (type: number, src: string) => {
+      const s = gl.createShader(type);
+      if (!s) return null;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        gl.deleteShader(s);
+        return null;
+      }
+      return s;
+    };
+
+    const vs = compileShader(gl.VERTEX_SHADER, vsSource);
+    const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
+    if (!vs || !fs) return;
+
+    const prog = gl.createProgram();
+    if (!prog) return;
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      gl.deleteProgram(prog);
+      return;
     }
+    this.archProgram = prog;
+
+    // Unit quad: TRIANGLE_STRIP covering [-1, 1]
+    const quadVertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+    this.archQuadBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.archQuadBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW);
+
+    this.archInstanceBuffer = gl.createBuffer();
   }
 
   private drawArchipelago(): void {
-    if (!this.archCtx || !this.archCanvas || !this.container) return;
-    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const gl = this.archGL;
+    if (!gl || !this.archProgram || !this.container) return;
+    const canvas = gl.canvas as HTMLCanvasElement;
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 600;
-    const ctx = this.archCtx;
 
-    this.resizeArchCanvas();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
-    ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    const visibleNodes = this.nodes.filter((n) => this.isNodeShown(n));
+    const N = visibleNodes.length;
 
-    if (this.nodes.length === 0) {
-      ctx.restore();
+    // Clear badge canvas if available
+    if (this.archBadgeCtx && this.archBadgeCanvas) {
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      this.archBadgeCtx.save();
+      this.archBadgeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.archBadgeCtx.clearRect(0, 0, w, h);
+    }
+
+    if (N === 0) {
+      if (this.archBadgeCtx) this.archBadgeCtx.restore();
       return;
     }
 
-    // Group all visible nodes by cluster
-    const clusters = new Map<string, { key: string; name: string; scope: string; nodes: SimNode[] }>();
-    for (const n of this.nodes) {
-      if (!this.isNodeShown(n)) continue;
-      const c = clusterKeyOfNode(n);
-      let cl = clusters.get(c.key);
-      if (!cl) {
-        cl = { key: c.key, name: c.name, scope: n.scope, nodes: [] };
-        clusters.set(c.key, cl);
-      }
-      cl.nodes.push(n);
-    }
+    // 1. Project visible nodes to screen coordinates
+    const pts = visibleNodes.map((n) => {
+      const vp = this.sigma.graphToViewport({ x: n.x, y: n.y });
+      return {
+        node: n,
+        x: vp.x,
+        y: vp.y,
+        r: n.r,
+        cluster: clusterKeyOfNode(n),
+      };
+    });
+
+    // 2. Adaptive neighborhood distance & target cohesion
+    // Dynamic scaling based on graph size: denser graphs use tighter radius
+    const densityScale = Math.pow(100 / Math.max(20, N), 0.25);
+    const R_nbr = Math.max(50, Math.min(180, 110 * densityScale));
+    const R_nbr_sq = R_nbr * R_nbr;
+    const targetNeighbors = Math.max(2.5, Math.min(10, Math.sqrt(N) * 0.45));
+
+    // 3. Compute continuous neighborhood cohesion per node
+    const instances: number[] = [];
+    const clusterCentroids = new Map<string, { sumX: number; sumY: number; count: number; name: string; scope: string; totalCohesion: number }>();
 
     const palette = ["#38bdf8", "#818cf8", "#c084fc", "#f472b6", "#34d399", "#fbbf24", "#2dd4bf", "#fb7185"];
     const hashColor = (str: string, scope: string) => {
@@ -729,96 +846,149 @@ export class GraphView {
       return palette[hash % palette.length];
     };
 
-    for (const cl of clusters.values()) {
-      if (cl.nodes.length < 2) continue;
+    const pixelRatio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
 
-      // Project node positions to viewport coordinates
-      const pts = cl.nodes.map((n) => {
-        const vp = this.sigma.graphToViewport({ x: n.x, y: n.y });
-        return { x: vp.x, y: vp.y, r: n.r, id: n.id };
-      });
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
 
-      // Frustum check: bounding box
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      let sumX = 0, sumY = 0;
-      for (const p of pts) {
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
-        sumX += p.x;
-        sumY += p.y;
-      }
-
-      if (maxX < -300 || minX > w + 300 || maxY < -300 || minY > h + 300) {
+      // Screen bounds culling (with padding for large blooms)
+      if (p.x < -200 || p.x > w + 200 || p.y < -200 || p.y > h + 200) {
         continue;
       }
 
-      const cx = sumX / pts.length;
-      const cy = sumY / pts.length;
+      let clusterNeighborCount = 0;
+      let closenessSum = 0;
 
-      // Calculate 85th percentile distance from centroid to prevent outlier ballooning
-      const dists = pts.map((p) => Math.hypot(p.x - cx, p.y - cy)).sort((a, b) => a - b);
-      const p85Idx = Math.min(dists.length - 1, Math.floor((dists.length - 1) * 0.85));
-      const p85 = dists[p85Idx];
-      const maxDist = Math.max(25, p85);
-      const bloomRadius = Math.max(50, maxDist + 35);
+      for (let j = 0; j < pts.length; j++) {
+        if (i === j) continue;
+        const dx = pts[j].x - p.x;
+        const dy = pts[j].y - p.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq > R_nbr_sq) continue;
 
-      const isHoveredCluster = Boolean(
-        this.hovered && pts.some((p) => p.id === this.hovered || this.hoverNeighbors.has(p.id)),
-      );
-      const isSelectedCluster = Boolean(
-        this.selected && pts.some((p) => p.id === this.selected || this.neighbors.has(p.id)),
-      );
-      const isHighlighted = isHoveredCluster || isSelectedCluster;
+        const dist = Math.sqrt(distSq);
+        const closeness = 1.0 - dist / R_nbr;
+        const sameCluster = pts[j].cluster.key === p.cluster.key;
 
-      const baseColor = hashColor(cl.key, cl.scope);
-
-      // 1. Draw individual node sub-blooms for organic archipelago contour
-      for (const p of pts) {
-        const subR = Math.max(28, p.r + 26);
-        const subGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, subR);
-        subGrad.addColorStop(0, colorWithAlpha(baseColor, isHighlighted ? 0.22 : 0.08));
-        subGrad.addColorStop(0.5, colorWithAlpha(baseColor, isHighlighted ? 0.10 : 0.035));
-        subGrad.addColorStop(1, colorWithAlpha(baseColor, 0));
-        ctx.fillStyle = subGrad;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, subR, 0, Math.PI * 2);
-        ctx.fill();
+        if (sameCluster) {
+          clusterNeighborCount++;
+          closenessSum += closeness * 1.6;
+        } else {
+          closenessSum += closeness * 0.25;
+        }
       }
 
-      // 2. Draw outer ambient cluster glow
-      const grad = ctx.createRadialGradient(cx, cy, Math.max(10, maxDist * 0.25), cx, cy, bloomRadius);
-      grad.addColorStop(0, colorWithAlpha(baseColor, isHighlighted ? 0.28 : 0.10));
-      grad.addColorStop(0.5, colorWithAlpha(baseColor, isHighlighted ? 0.12 : 0.04));
-      grad.addColorStop(1, colorWithAlpha(baseColor, 0));
+      // Check focus (hover or selected)
+      const isHovered = Boolean(this.hovered && (p.node.id === this.hovered || this.hoverNeighbors.has(p.node.id)));
+      const isSelected = Boolean(this.selected && (p.node.id === this.selected || this.neighbors.has(p.node.id)));
+      const isFocus = isHovered || isSelected;
 
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(cx, cy, bloomRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 3. Subtle archipelago boundary contour & watermark label
-      if (maxDist > 25) {
-        ctx.save();
-        ctx.strokeStyle = colorWithAlpha(baseColor, isHighlighted ? 0.38 : 0.14);
-        ctx.lineWidth = isHighlighted ? 1.5 : 1.0;
-        ctx.setLineDash([5, 7]);
-        ctx.beginPath();
-        ctx.arc(cx, cy, maxDist + 22, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-
-        // Watermark badge label
-        const labelText = `⬡ ${cl.name} (${cl.nodes.length})`;
-        ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = colorWithAlpha(baseColor, isHighlighted ? 0.85 : 0.40);
-        ctx.fillText(labelText, cx, cy - maxDist - 12);
+      // If lonely node (< 1 cluster neighbor) and not focused, no bloom
+      if (clusterNeighborCount < 1 && !isFocus) {
+        continue;
       }
+
+      // Continuous cohesion factor (0.0 to 1.0)
+      let cohesion = Math.min(1.0, closenessSum / targetNeighbors);
+      if (isFocus) {
+        cohesion = Math.min(1.0, cohesion + 0.45);
+      }
+
+      // Adaptive bloom radius: scales with node radius, cluster neighbor density, and focus
+      const bloomRadius = Math.max(30, (p.r + 28) * densityScale + Math.min(40, clusterNeighborCount * 5) + (isFocus ? 18 : 0));
+
+      const baseHex = hashColor(p.cluster.key, p.node.scope);
+      const alpha = isFocus ? 0.38 : 0.16;
+      const [r, g, b, a] = parseColorToRgba(baseHex, alpha);
+
+      // Store cluster centroid stats for badge rendering
+      let cc = clusterCentroids.get(p.cluster.key);
+      if (!cc) {
+        cc = { sumX: 0, sumY: 0, count: 0, name: p.cluster.name, scope: p.node.scope, totalCohesion: 0 };
+        clusterCentroids.set(p.cluster.key, cc);
+      }
+      cc.sumX += p.x;
+      cc.sumY += p.y;
+      cc.count += 1;
+      cc.totalCohesion += cohesion;
+
+      // Layout per instance (8 floats):
+      // a_center.x, a_center.y, a_radius, a_color.r, a_color.g, a_color.b, a_color.a, a_cohesion
+      instances.push(
+        p.x * pixelRatio,
+        p.y * pixelRatio,
+        bloomRadius * pixelRatio,
+        r, g, b, a,
+        cohesion,
+      );
     }
 
-    ctx.restore();
+    // 4. Render WebGL instanced blooms
+    const instanceCount = instances.length / 8;
+    if (instanceCount > 0 && this.archInstanceBuffer) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+      gl.useProgram(this.archProgram);
+      const uResLoc = gl.getUniformLocation(this.archProgram, "u_resolution");
+      gl.uniform2f(uResLoc, canvas.width, canvas.height);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.archQuadBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+      const data = new Float32Array(instances);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.archInstanceBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+
+      const stride = 8 * 4;
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, stride, 0);
+      gl.vertexAttribDivisor(1, 1);
+
+      gl.enableVertexAttribArray(2);
+      gl.vertexAttribPointer(2, 1, gl.FLOAT, false, stride, 8);
+      gl.vertexAttribDivisor(2, 1);
+
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 4, gl.FLOAT, false, stride, 12);
+      gl.vertexAttribDivisor(3, 1);
+
+      gl.enableVertexAttribArray(4);
+      gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 28);
+      gl.vertexAttribDivisor(4, 1);
+
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instanceCount);
+
+      // Clean up vertex attribute divisors
+      gl.vertexAttribDivisor(1, 0);
+      gl.vertexAttribDivisor(2, 0);
+      gl.vertexAttribDivisor(3, 0);
+      gl.vertexAttribDivisor(4, 0);
+    }
+
+    // 5. Draw high-cohesion badges on badge canvas
+    if (this.archBadgeCtx) {
+      const ctx = this.archBadgeCtx;
+      for (const [key, cc] of clusterCentroids.entries()) {
+        const avgCohesion = cc.totalCohesion / cc.count;
+        if (cc.count >= 2 && avgCohesion >= 0.25) {
+          const cx = cc.sumX / cc.count;
+          const cy = cc.sumY / cc.count;
+          const baseColor = hashColor(key, cc.scope);
+          const isClusterFocus = Boolean(
+            (this.hovered && pts.some((p) => p.cluster.key === key && (p.node.id === this.hovered || this.hoverNeighbors.has(p.node.id)))) ||
+            (this.selected && pts.some((p) => p.cluster.key === key && (p.node.id === this.selected || this.neighbors.has(p.node.id))))
+          );
+
+          ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = colorWithAlpha(baseColor, isClusterFocus ? 0.88 : 0.45);
+          ctx.fillText(`⬡ ${cc.name} (${cc.count})`, cx, cy - 35);
+        }
+      }
+      ctx.restore();
+    }
   }
 }

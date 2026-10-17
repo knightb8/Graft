@@ -9,11 +9,12 @@ Feature: Visualizer Archipelago Blooms and Smart LOD Labels
     And the visualizer includes the archipelago background canvas layer
 
   @covers:viewer/graph.ts @covers:test/viz-sigma.test.ts
-  Scenario: Grouping nodes into high-cohesion archipelago clusters
+  Scenario: Scale-adaptive neighborhood cohesion blooms on WebGL layer
     When the graph nodes are rendered on the canvas
-    Then nodes sharing common directories should be grouped into cluster archipelagos
-    And each archipelago with multiple nodes should render luminous ambient blooms
-    And a subtle boundary contour and watermark label should display near the cluster crown
+    Then neighborhood cohesion should be computed dynamically based on node proximity and graph scale
+    And isolated nodes without cluster neighbors should emit zero bloom
+    And dense cluster communities should render hardware-accelerated WebGL radiant blooms
+    And a watermark badge should display near the cluster centroid for high-cohesion regions
 
   @covers:viewer/graph.ts @covers:test/viz-sigma.test.ts
   Scenario: Smart LOD label visibility across zoom levels

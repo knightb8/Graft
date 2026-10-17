@@ -24,15 +24,24 @@ With the migration to Sigma.js WebGL (ADR 0009), the Graft visualizer achieved f
 
 We adopt a **Dual-Layer Architecture** combining Sigma WebGL with an HTML5 2D canvas backdrop, paired with a hierarchical Level-of-Detail (LOD) label system and strict visibility reducers.
 
-### 1. Dual-Layer Visualizer Architecture
-- **Backdrop Canvas (`archipelago-canvas`)**:
-  - Inserted into the container at `z-index: 0` directly behind Sigma's WebGL canvas.
-  - Renders soft, luminous radial gradient blooms and organic metaball halos for clusters with $\ge 2$ nodes.
-  - Groups nodes by architectural subsystem/directory path (`src/graph`, `src/parser`, `docs/adr`, `features/parsing`).
-  - Uses 90th percentile distance from the cluster centroid to prevent distant outlier nodes from over-expanding the archipelago contour.
-  - Draws a subtle dashed contour and translucent watermark badge (`⬡ src/graph (14)`).
-  - Highlights intensely when the cluster contains the currently hovered or selected node.
-  - Synchronizes seamlessly with camera pan/zoom via `sigma.graphToViewport()` and frustum culling.
+### 1. Native WebGL 2 Hardware Shader Pipeline & Adaptive Cohesion
+- **Integrated WebGL 2 Layer (`sigma.createWebGLContext`)**:
+  - Rather than running a CPU-bound 2D canvas context, the archipelago bloom layer is provisioned directly via Sigma's layer manager: `this.sigma.createWebGLContext("archipelago", { beforeLayer: "stage" })`.
+  - Automatically participates in Sigma's canvas lifecycle (device pixel ratio scaling on resize, and automated DOM cleanup on `sigma.kill()`).
+  - Executes a specialized WebGL 2 GLSL 300 es vertex and fragment shader using instanced quads (`gl.drawArraysInstanced`).
+  - Fragment shader computes exponential Gaussian radiance with smooth quadratic edge falloff:
+    `float glow = exp(-r2 * 2.5) * (1.0 - r2 * r2);`
+  - Uses premultiplied additive alpha blending (`gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)`), allowing overlapping auras to fuse additively into radiant, continuous metaball archipelagos directly on the GPU in a single draw call.
+
+- **Scale-Adaptive Neighborhood Cohesion Model (No Fixed X)**:
+  - Fixed clustering thresholds (e.g. static circular blooms for directories $\ge X$) fail because small repos (15 nodes) and large repos (2,500 nodes) have vastly different spatial and semantic scales.
+  - Instead, the visualizer computes a continuous **neighborhood cohesion field**:
+    1. **Scale-Dependent Distance**: Neighborhood search radius adaptively scales with total visible nodes $N$:
+       $R_{\text{nbr}} = \text{clamp}(110 \times (100 / \max(20, N))^{0.25}, 50, 180)\text{ px}$.
+       Contracts automatically in dense graphs to keep blooms localized; expands in sparse graphs to preserve island connectivity.
+    2. **Topology & Subsystem Density**: Evaluates proximity and subsystem matching across neighbors. Isolated or solitary nodes (< 1 cluster neighbor) receive **zero bloom** ($C_i = 0$), preventing artificial circles on lonely files.
+    3. **Continuous Cohesion Score**: Dense neighborhoods additively accumulate high cohesion ($C_i \in [0.1, 1.0]$), with a $+0.45$ radiance boost when focused by mouse hover or selection.
+  - A lightweight watermark badge layer (`createCanvas("archipelago-badges", { beforeLayer: "mouse" })`) renders crisp vector typography labels (`⬡ src/graph (14)`) at the centroids of verified high-cohesion clusters.
 
 ### 2. Smart Level-of-Detail (LOD) Labeling
 In Sigma 4, `DisplayData` supports `labelVisibility: "visible" | "auto" | "hidden"`:

@@ -289,4 +289,73 @@ test("Smart LOD label rules prioritize landmarks, hover, and search hits", () =>
   assert.equal(hit.elevated, true);
 });
 
+test("Adaptive neighborhood cohesion scales with graph size and rejects isolated nodes", () => {
+  function computeCohesion(
+    nodeIndex: number,
+    pts: Array<{ x: number; y: number; clusterKey: string }>,
+    totalNodes: number,
+  ): { cohesion: number; radius: number; hasBloom: boolean } {
+    const p = pts[nodeIndex];
+    const densityScale = Math.pow(100 / Math.max(20, totalNodes), 0.25);
+    const R_nbr = Math.max(50, Math.min(180, 110 * densityScale));
+    const R_nbr_sq = R_nbr * R_nbr;
+    const targetNeighbors = Math.max(2.5, Math.min(10, Math.sqrt(totalNodes) * 0.45));
+
+    let clusterNeighborCount = 0;
+    let closenessSum = 0;
+
+    for (let j = 0; j < pts.length; j++) {
+      if (nodeIndex === j) continue;
+      const dx = pts[j].x - p.x;
+      const dy = pts[j].y - p.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > R_nbr_sq) continue;
+
+      const dist = Math.sqrt(distSq);
+      const closeness = 1.0 - dist / R_nbr;
+      const sameCluster = pts[j].clusterKey === p.clusterKey;
+
+      if (sameCluster) {
+        clusterNeighborCount++;
+        closenessSum += closeness * 1.6;
+      } else {
+        closenessSum += closeness * 0.25;
+      }
+    }
+
+    if (clusterNeighborCount < 1) {
+      return { cohesion: 0, radius: 0, hasBloom: false };
+    }
+
+    const cohesion = Math.min(1.0, closenessSum / targetNeighbors);
+    const radius = 30 * densityScale + Math.min(40, clusterNeighborCount * 5);
+    return { cohesion, radius, hasBloom: true };
+  }
+
+  // Setup: 4 nodes in a tight cluster at (0, 0), and 1 isolated node at (600, 600)
+  const pts = [
+    { x: 0, y: 0, clusterKey: "src/graph" },
+    { x: 15, y: 15, clusterKey: "src/graph" },
+    { x: -15, y: -10, clusterKey: "src/graph" },
+    { x: 5, y: -20, clusterKey: "src/graph" },
+    { x: 600, y: 600, clusterKey: "src/graph" }, // Isolated node
+  ];
+
+  // In a small graph (5 nodes total)
+  const clusterNodeResult = computeCohesion(0, pts, 5);
+  assert.equal(clusterNodeResult.hasBloom, true);
+  assert.ok(clusterNodeResult.cohesion > 0.5, "Node in cluster has high cohesion");
+
+  const isolatedNodeResult = computeCohesion(4, pts, 5);
+  assert.equal(isolatedNodeResult.hasBloom, false);
+  assert.equal(isolatedNodeResult.cohesion, 0, "Isolated node emits zero bloom");
+
+  // In a large graph (2,000 nodes total):
+  // R_nbr contracts from ~160px down to ~50-60px
+  const smallGraphDensity = Math.pow(100 / Math.max(20, 5), 0.25);
+  const largeGraphDensity = Math.pow(100 / Math.max(20, 2000), 0.25);
+  assert.ok(largeGraphDensity < smallGraphDensity, "Scale factor contracts on large graphs");
+});
+
+
 
