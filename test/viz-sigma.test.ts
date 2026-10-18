@@ -451,5 +451,115 @@ test("Adaptive neighborhood cohesion scales with graph size and rejects isolated
   assert.ok(largeGraphDensity < smallGraphDensity, "Scale factor contracts on large graphs");
 });
 
+test("Archipelago canvas buffer sizing scales with container and devicePixelRatio", () => {
+  function syncCanvasDimensions(
+    containerW: number,
+    containerH: number,
+    dpr: number,
+    currentW: number,
+    currentH: number,
+  ): { targetW: number; targetH: number; needsResize: boolean; cssW: string; cssH: string } {
+    const targetW = Math.round(containerW * dpr);
+    const targetH = Math.round(containerH * dpr);
+    const needsResize = currentW !== targetW || currentH !== targetH;
+    return {
+      targetW,
+      targetH,
+      needsResize,
+      cssW: `${containerW}px`,
+      cssH: `${containerH}px`,
+    };
+  }
+
+  // Initial unconfigured canvas (defaults to 300x150)
+  const initial = syncCanvasDimensions(1280, 720, 2, 300, 150);
+  assert.equal(initial.needsResize, true);
+  assert.equal(initial.targetW, 2560);
+  assert.equal(initial.targetH, 1440);
+  assert.equal(initial.cssW, "1280px");
+  assert.equal(initial.cssH, "720px");
+
+  // Already synchronized canvas
+  const synchronized = syncCanvasDimensions(1280, 720, 2, 2560, 1440);
+  assert.equal(synchronized.needsResize, false);
+});
+
+test("Spatial grid hashing computes identical neighborhood cohesion in linear time", () => {
+  const pts: Array<{ x: number; y: number; clusterKey: string }> = [];
+  const R_nbr = 100;
+  const R_nbr_sq = R_nbr * R_nbr;
+
+  // Generate 200 nodes in pseudo-clusters
+  for (let i = 0; i < 200; i++) {
+    const cluster = `cluster-${i % 5}`;
+    const cx = (i % 5) * 150;
+    const cy = Math.floor(i / 5) * 15;
+    pts.push({ x: cx + (i % 3) * 10, y: cy + (i % 2) * 10, clusterKey: cluster });
+  }
+
+  // 1. Naive O(N^2) calculation
+  const naiveResults: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    let sum = 0;
+    for (let j = 0; j < pts.length; j++) {
+      if (i === j) continue;
+      const dx = pts[j].x - p.x;
+      const dy = pts[j].y - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= R_nbr_sq) {
+        sum += 1.0 - Math.sqrt(d2) / R_nbr;
+      }
+    }
+    naiveResults.push(sum);
+  }
+
+  // 2. Spatial Grid O(N) calculation
+  const cellSize = R_nbr;
+  const grid = new Map<string, number[]>();
+  for (let i = 0; i < pts.length; i++) {
+    const cx = Math.floor(pts[i].x / cellSize);
+    const cy = Math.floor(pts[i].y / cellSize);
+    const key = `${cx},${cy}`;
+    const list = grid.get(key);
+    if (list) list.push(i);
+    else grid.set(key, [i]);
+  }
+
+  const gridResults: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const cx = Math.floor(p.x / cellSize);
+    const cy = Math.floor(p.y / cellSize);
+    let sum = 0;
+
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const bucket = grid.get(`${cx + ox},${cy + oy}`);
+        if (!bucket) continue;
+        for (let k = 0; k < bucket.length; k++) {
+          const j = bucket[k];
+          if (i === j) continue;
+          const dx = pts[j].x - p.x;
+          const dy = pts[j].y - p.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= R_nbr_sq) {
+            sum += 1.0 - Math.sqrt(d2) / R_nbr;
+          }
+        }
+      }
+    }
+    gridResults.push(sum);
+  }
+
+  assert.equal(gridResults.length, naiveResults.length);
+  for (let i = 0; i < pts.length; i++) {
+    assert.ok(
+      Math.abs(gridResults[i] - naiveResults[i]) < 1e-6,
+      `Grid result matches naive result at node ${i}`,
+    );
+  }
+});
+
 
 

@@ -14,17 +14,14 @@
  */
 import Sigma from "sigma";
 import { MultiDirectedGraph } from "graphology";
-import {
-  forceSimulation, forceManyBody, forceLink, forceCenter, forceCollide, forceX, forceY,
-  type Simulation, type SimulationNodeDatum,
-} from "d3-force";
+import forceAtlas2 from "graphology-layout-forceatlas2";
 import {
   type VizGraph, type NodeOwner, type TripartiteScope, type ConcreteScope,
-  famOf, REST, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
+  famOf, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
   generateTransitiveEdges,
 } from "./data.js";
 
-export interface SimNode extends SimulationNodeDatum {
+export interface SimNode {
   id: string;
   name: string;
   type: string;
@@ -35,10 +32,6 @@ export interface SimNode extends SimulationNodeDatum {
   owners?: NodeOwner[];
   x: number;
   y: number;
-  vx?: number;
-  vy?: number;
-  fx?: number | null;
-  fy?: number | null;
 }
 
 export interface NodeAttrs {
@@ -124,7 +117,6 @@ export class GraphView {
   private container: HTMLElement;
   private graph: MultiDirectedGraph<NodeAttrs, EdgeAttrs>;
   private sigma: Sigma<NodeAttrs, EdgeAttrs>;
-  private sim: Simulation<SimNode, undefined> | null = null;
   private tab: "context" | "code" = "context";
   private rawGraph: VizGraph | null = null;
   private nodes: SimNode[] = [];
@@ -242,32 +234,16 @@ export class GraphView {
       this.drawArchipelago();
     });
 
-    this.sigma.on("nodeDragStart", (e) => {
-      const node = this.nodeMap.get(e.node);
-      if (node) {
-        node.fx = node.x;
-        node.fy = node.y;
-        this.sim?.alphaTarget(0.3).restart();
-      }
-    });
-
     this.sigma.on("nodeDrag", (e) => {
+      const coords = this.sigma.viewportToGraph(e.event);
+      this.graph.setNodeAttribute(e.node, "x", coords.x);
+      this.graph.setNodeAttribute(e.node, "y", coords.y);
       const node = this.nodeMap.get(e.node);
       if (node) {
-        const coords = this.sigma.viewportToGraph(e.event);
-        node.fx = coords.x;
-        node.fy = coords.y;
-        this.sim?.alphaTarget(0.3).restart();
+        node.x = coords.x;
+        node.y = coords.y;
       }
-    });
-
-    this.sigma.on("nodeDragEnd", (e) => {
-      const node = this.nodeMap.get(e.node);
-      if (node) {
-        node.fx = null;
-        node.fy = null;
-        this.sim?.alphaTarget(0);
-      }
+      this.drawArchipelago();
     });
   }
 
@@ -315,46 +291,6 @@ export class GraphView {
       };
     });
 
-    const byId = new Map(this.nodes.map((n) => [n.id, n]));
-    const simLinks = graph.edges
-      .map((e) => ({
-        source: byId.get(e.source)!,
-        target: byId.get(e.target)!,
-        relation: e.relation,
-      }))
-      .filter((e) => e.source && e.target);
-
-    // Stop previous simulation
-    this.sim?.stop();
-
-    this.sim = forceSimulation(this.nodes)
-      .force(
-        "charge",
-        forceManyBody()
-          .strength((n: any) => {
-            const d = n.deg ?? 0;
-            return d === 0 ? -40 : -80 - Math.min(220, d * 18);
-          })
-          .distanceMax(800),
-      )
-      .force(
-        "link",
-        forceLink(simLinks as any)
-          .distance((l: any) => (REST[famOf(l.relation)] ?? 90) * 1.1)
-          .strength(0.4),
-      )
-      .force("x", forceX(0).strength((n: any) => (n.deg === 0 ? 0.09 : 0.035)))
-      .force("y", forceY(0).strength((n: any) => (n.deg === 0 ? 0.09 : 0.035)))
-      .force("center", forceCenter(0, 0).strength(0.25))
-      .force("collide", forceCollide<SimNode>().radius((n) => n.r + 20).strength(0.85).iterations(2))
-      .alpha(0.8)
-      .alphaDecay(0.02);
-
-    // Warm up the simulation synchronously with 60 fast ticks so nodes expand properly
-    for (let i = 0; i < 60; i++) {
-      this.sim.tick();
-    }
-
     for (const node of this.nodes) {
       this.nodeMap.set(node.id, node);
       const color = cvar(colorToken(this.tab, node.type, node.scope));
@@ -389,17 +325,34 @@ export class GraphView {
       }
     }
 
-    // Connect live simulation ticks to graphology and sigma
-    this.sim.on("tick", () => {
-      for (const n of this.nodes) {
-        this.graph.mergeNodeAttributes(n.id, { x: n.x, y: n.y });
+    // Converge layout instantly via Barnes-Hut ForceAtlas2 without main-thread physics stutter
+    if (this.graph.order > 0) {
+      try {
+        const settings = forceAtlas2.inferSettings(this.graph);
+        const iterations = Math.min(100, Math.max(35, Math.floor(1200 / Math.max(1, this.graph.order))));
+        forceAtlas2.assign(this.graph, {
+          iterations,
+          settings: {
+            ...settings,
+            barnesHutOptimize: true,
+            gravity: 1.0,
+            scalingRatio: 8,
+            adjustSizes: true,
+          },
+        });
+      } catch {
+        // Fallback: circular initial positions
       }
-      this.sigma.scheduleRefresh();
-      this.drawArchipelago();
-    });
 
-    // Resume simulation to let it wobble and relax into equilibrium
-    this.sim.restart();
+      // Synchronize converged coordinates back to this.nodes
+      this.graph.forEachNode((id, attrs) => {
+        const n = this.nodeMap.get(id);
+        if (n) {
+          n.x = attrs.x;
+          n.y = attrs.y;
+        }
+      });
+    }
 
     this.restyle();
     this.resetView();
@@ -796,11 +749,33 @@ export class GraphView {
   }
 
   reheat(): void {
-    this.sim?.alpha(0.6).restart();
+    if (this.graph.order > 0) {
+      try {
+        const settings = forceAtlas2.inferSettings(this.graph);
+        forceAtlas2.assign(this.graph, {
+          iterations: 35,
+          settings: {
+            ...settings,
+            barnesHutOptimize: true,
+            gravity: 1.0,
+            scalingRatio: 8,
+            adjustSizes: true,
+          },
+        });
+        this.graph.forEachNode((id, attrs) => {
+          const n = this.nodeMap.get(id);
+          if (n) {
+            n.x = attrs.x;
+            n.y = attrs.y;
+          }
+        });
+        this.sigma.refresh();
+        this.drawArchipelago();
+      } catch {}
+    }
   }
 
   destroy(): void {
-    this.sim?.stop();
     if (this.archGL) {
       if (this.archProgram) this.archGL.deleteProgram(this.archProgram);
       if (this.archQuadBuffer) this.archGL.deleteBuffer(this.archQuadBuffer);
@@ -902,6 +877,17 @@ export class GraphView {
     const canvas = gl.canvas as HTMLCanvasElement;
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 600;
+    const pixelRatio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+
+    const targetW = Math.round(w * pixelRatio);
+    const targetH = Math.round(h * pixelRatio);
+
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+    }
 
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -912,9 +898,14 @@ export class GraphView {
 
     // Clear badge canvas if available
     if (this.archBadgeCtx && this.archBadgeCanvas) {
-      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      if (this.archBadgeCanvas.width !== targetW || this.archBadgeCanvas.height !== targetH) {
+        this.archBadgeCanvas.width = targetW;
+        this.archBadgeCanvas.height = targetH;
+        this.archBadgeCanvas.style.width = `${w}px`;
+        this.archBadgeCanvas.style.height = `${h}px`;
+      }
       this.archBadgeCtx.save();
-      this.archBadgeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.archBadgeCtx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       this.archBadgeCtx.clearRect(0, 0, w, h);
     }
 
@@ -942,7 +933,25 @@ export class GraphView {
     const R_nbr_sq = R_nbr * R_nbr;
     const targetNeighbors = Math.max(2.5, Math.min(10, Math.sqrt(N) * 0.45));
 
-    // 3. Compute continuous neighborhood cohesion per node
+    // 3. Compute continuous neighborhood cohesion per node via 2D spatial grid
+    const cellSize = R_nbr;
+    const grid = new Map<string, number[]>();
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (p.x < -200 || p.x > w + 200 || p.y < -200 || p.y > h + 200) {
+        continue;
+      }
+      const cx = Math.floor(p.x / cellSize);
+      const cy = Math.floor(p.y / cellSize);
+      const key = `${cx},${cy}`;
+      const bucket = grid.get(key);
+      if (bucket) {
+        bucket.push(i);
+      } else {
+        grid.set(key, [i]);
+      }
+    }
+
     const instances: number[] = [];
     const clusterCentroids = new Map<string, { sumX: number; sumY: number; count: number; name: string; scope: string; totalCohesion: number }>();
 
@@ -955,8 +964,6 @@ export class GraphView {
       return palette[hash % palette.length];
     };
 
-    const pixelRatio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
 
@@ -965,25 +972,36 @@ export class GraphView {
         continue;
       }
 
+      const cx = Math.floor(p.x / cellSize);
+      const cy = Math.floor(p.y / cellSize);
+
       let clusterNeighborCount = 0;
       let closenessSum = 0;
 
-      for (let j = 0; j < pts.length; j++) {
-        if (i === j) continue;
-        const dx = pts[j].x - p.x;
-        const dy = pts[j].y - p.y;
-        const distSq = dx * dx + dy * dy;
-        if (distSq > R_nbr_sq) continue;
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const bucket = grid.get(`${cx + ox},${cy + oy}`);
+          if (!bucket) continue;
+          for (let k = 0; k < bucket.length; k++) {
+            const j = bucket[k];
+            if (i === j) continue;
+            const other = pts[j];
+            const dx = other.x - p.x;
+            const dy = other.y - p.y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq > R_nbr_sq) continue;
 
-        const dist = Math.sqrt(distSq);
-        const closeness = 1.0 - dist / R_nbr;
-        const sameCluster = pts[j].cluster.key === p.cluster.key;
+            const dist = Math.sqrt(distSq);
+            const closeness = 1.0 - dist / R_nbr;
+            const sameCluster = other.cluster.key === p.cluster.key;
 
-        if (sameCluster) {
-          clusterNeighborCount++;
-          closenessSum += closeness * 1.6;
-        } else {
-          closenessSum += closeness * 0.25;
+            if (sameCluster) {
+              clusterNeighborCount++;
+              closenessSum += closeness * 1.6;
+            } else {
+              closenessSum += closeness * 0.25;
+            }
+          }
         }
       }
 

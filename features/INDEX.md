@@ -16,6 +16,7 @@
 | **parsing** | **core** | 11 | `parsing/core/markdown_ast_support-11.feature` | Markdown AST and Document Structure Extraction |
 | **parsing** | **core** | 12 | `parsing/core/semantic_edges_refinement-12.feature` | Semantic Edge Refinements for Tripartite Architecture |
 | **viz** | **core** | 14 | `viz/core/archipelago_and_lod_labels-14.feature` | Visualizer Archipelago Blooms and Smart LOD Labels |
+| **viz** | **core** | 15 | `viz/core/fa2_layout_and_bloom_scaling-15.feature` | Pure ForceAtlas2 Layout and Viewport-Scaled Archipelago Blooms |
 | **viz** | **core** | 13 | `viz/core/sigma_webgl_migration-13.feature` | Sigma.js WebGL Graph Visualizer |
 | **viz** | **core** | 12 | `viz/core/transitive_edges-12.feature` | Transitive Edge Generation and Edge Visibility |
 | **viz** | **core** | 11 | `viz/core/tree_picker-11.feature` | Left Tree-View Picker Panel in Visualizer |
