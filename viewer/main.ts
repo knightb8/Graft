@@ -210,6 +210,11 @@ function setTab(tab: Tab): void {
       empty.hidden = true;
       view.setData(graph, graphTab());
       picker.setGraph(graph);
+      if (typeof requestAnimationFrame !== "undefined") {
+        requestAnimationFrame(() => {
+          view.resetView();
+        });
+      }
     }
   }
   renderChips();

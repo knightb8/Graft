@@ -404,6 +404,12 @@ export class GraphView {
     this.restyle();
     this.resetView();
     this.drawArchipelago();
+    if (typeof requestAnimationFrame !== "undefined") {
+      requestAnimationFrame(() => {
+        this.resetView();
+        this.drawArchipelago();
+      });
+    }
   }
 
   private reduceNode(nodeId: string, data: any): any {
@@ -755,20 +761,32 @@ export class GraphView {
 
       const midX = (minX + maxX) / 2;
       const midY = (minY + maxY) / 2;
-      const spanW = Math.max(80, maxX - minX);
-      const spanH = Math.max(80, maxY - minY);
+      const framedCenter = this.sigma.graphToFramedGraph({ x: midX, y: midY });
 
       const W = this.container.clientWidth || 800;
       const H = this.container.clientHeight || 600;
 
+      // Project bounds to viewport at reference camera ratio 1.0
+      const pMin = this.sigma.graphToViewport(
+        { x: minX, y: minY },
+        { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
+      );
+      const pMax = this.sigma.graphToViewport(
+        { x: maxX, y: maxY },
+        { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
+      );
+
+      const currentW = Math.max(10, Math.abs(pMax.x - pMin.x));
+      const currentH = Math.max(10, Math.abs(pMax.y - pMin.y));
+
       // Desired coverage is 75% of center real estate
       const targetW = W * 0.75;
       const targetH = H * 0.75;
-      const targetRatio = Math.max(0.2, Math.min(2.5, Math.max(spanW / targetW, spanH / targetH)));
+      const targetRatio = Math.max(0.2, Math.min(2.5, Math.max(currentW / targetW, currentH / targetH)));
 
       camera.setState({
-        x: midX,
-        y: midY,
+        x: framedCenter.x,
+        y: framedCenter.y,
         ratio: targetRatio,
         angle: 0,
       });
