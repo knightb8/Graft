@@ -51,7 +51,7 @@ When generating the contents of the `.feature` file, you MUST write **Declarativ
 *   **BAD (Imperative/UI focused)**: `When I type "martin" into the "#username" field and I click the "Submit" button`
 *   **GOOD (Declarative/Business focused)**: `When the user logs in with valid credentials`
 
-Always focus on *what* the system is doing or *why* the user is doing it, entirely decoupled from *how* the UI is implemented.
+Always focus on *what* the system is doing or *why* the user is doing it, entirely decoupled from *how* the UI is implemented — **unless** the feature enforces a **Compliance requirement or hard technical constraint** (e.g., WASM/TypedArray execution, zero-allocation memory invariants, security/cryptographic mandates, or strict frame-budget SLAs) specifically designed to prevent **code-drift**.
 
 For detailed Gherkin syntax patterns (Background, Data Tables, Scenario Outlines), see [GHERKIN_PATTERNS.md](./GHERKIN_PATTERNS.md).
 For step definition code organization, see [STEP_DEFINITIONS.md](./STEP_DEFINITIONS.md).

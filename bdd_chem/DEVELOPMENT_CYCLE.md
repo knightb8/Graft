@@ -46,7 +46,7 @@ If the work involves a significant architectural decision (database design, sync
    ```
    features/<domain>/<layer>/<aspect>-<counter>.feature
    ```
-2. Write **declarative** Gherkin — *what* the system does, never *how* to click a button. See [GHERKIN_PATTERNS.md](./GHERKIN_PATTERNS.md).
+2. Write **declarative** Gherkin — *what* the system does, never *how* to click a button — **unless** the scenario enforces a **Compliance requirement or a hard technical constraint** (e.g., WebAssembly/SIMD execution, zero-allocation memory bounds, cryptographic primitives, or strict frame-time budgets) required to prevent architectural or performance code-drift. See [GHERKIN_PATTERNS.md](./GHERKIN_PATTERNS.md).
 3. Run your project's step-binding/stub generator if it has one.
 4. Ensure the task is tracked on the board as an active item.
 

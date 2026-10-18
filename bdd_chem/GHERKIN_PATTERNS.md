@@ -135,6 +135,8 @@ When writing Gherkin, avoid the following common pitfalls:
 *   **Imperative steps:** Avoid writing steps that describe *how* to do something (e.g., clicking buttons, filling fields by CSS selector). Focus on *what* is happening (declarative).
     *   *Bad:* `When I type "admin" into the username field and click the login button`
     *   *Good:* `When the administrator logs in`
+    *   *Exception (Compliance & Hard Technical Constraints):* This general rule applies **unless** the scenario specifies a **Compliance requirement or a hard technical/architectural constraint** (e.g., WebAssembly/TypedArray execution, zero-allocation memory invariants, security/regulatory compliance, or hard frame-time SLAs) where locking down the technical mechanism in the `.feature` spec is intentionally required to prevent **code-drift** by future contributors or AI agents.
 *   **Giant scenarios:** Scenarios with 20+ steps are hard to read, maintain, and debug. Break complex scenarios into smaller, focused scenarios.
 *   **Scenarios that depend on execution order:** Every scenario must be completely independent. Never rely on the state left by a previous scenario.
 *   **Misusing Background:** Putting steps in a `Background` that only apply to a subset of the scenarios in the file. If it doesn't apply to *every* scenario, it belongs in the individual scenarios.
+

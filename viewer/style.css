@@ -254,6 +254,7 @@ button:focus-visible,input:focus-visible,.tree-row:focus-visible{outline:2px sol
   cursor:pointer;
 }
 .ptool-btn:hover{color:var(--ink);background:var(--border)}
+.preset-btn.active{background:rgba(56, 189, 248, 0.22);color:var(--accent);border:1px solid rgba(56, 189, 248, 0.45)}
 .picker-filter{padding:7px 10px;border-bottom:1px solid var(--border2);flex:none}
 .picker-filter input{
   width:100%;
@@ -288,6 +289,102 @@ button:focus-visible,input:focus-visible,.tree-row:focus-visible{outline:2px sol
   height:13px;
   accent-color:var(--accent);
   flex:none;
+}
+.p-tristate{
+  cursor:pointer;
+  margin:0 2px 0 0;
+  width:15px;
+  height:15px;
+  padding:0;
+  border-radius:3px;
+  border:1px solid var(--border);
+  background:var(--panel2);
+  color:var(--muted);
+  font-family:inherit;
+  font-size:10px;
+  font-weight:700;
+  line-height:1;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:none;
+  transition:all .12s;
+}
+.p-tristate:hover{border-color:var(--ink);background:var(--chip)}
+.p-tristate.p-tri-pinned{
+  background:rgba(16,185,129,0.18);
+  border-color:#10b981;
+  color:#10b981;
+}
+.p-tristate.p-tri-excluded{
+  background:rgba(239,68,68,0.18);
+  border-color:#ef4444;
+  color:#ef4444;
+}
+.p-tristate.p-tri-mixed{
+  background:rgba(56,189,248,0.15);
+  border-color:var(--accent);
+  color:var(--accent);
+}
+.p-row.p-row-reduce{
+  outline:1.5px solid var(--accent);
+  background:rgba(56,189,248,0.1);
+}
+.p-row.p-row-circle{
+  outline:1.5px solid #fbbf24;
+  background:rgba(251,191,36,0.12);
+}
+.p-row.p-row-pinned{
+  color:#10b981;
+}
+.p-row.p-row-pinned .p-badge{
+  color:#10b981;
+  font-weight:600;
+}
+.p-row.p-row-excluded{
+  opacity:0.42;
+  text-decoration:line-through;
+  color:#ef4444;
+}
+.p-circle-btn{
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  font-size:11px;
+  cursor:pointer;
+  padding:0 2px;
+  line-height:1;
+  opacity:0.6;
+  transition:opacity .12s, color .12s;
+  flex:none;
+}
+.p-circle-btn:hover{
+  opacity:1;
+  color:#fbbf24;
+}
+.p-circle-btn.active{
+  opacity:1;
+  color:#fbbf24;
+  font-weight:700;
+}
+.p-ghost-stub{
+  margin:10px 4px 6px;
+  padding:6px 10px;
+  border-radius:6px;
+  border:1px dashed var(--accent);
+  background:var(--panel2);
+  color:var(--accent);
+  font-size:11px;
+  cursor:pointer;
+  user-select:none;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  transition:all .15s ease;
+}
+.p-ghost-stub:hover{
+  background:var(--chip);
+  border-style:solid;
 }
 .p-chev{
   width:12px;

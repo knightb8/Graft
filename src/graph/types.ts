@@ -104,7 +104,8 @@ export type Relation =
   | "covers" // Spec/Feature → Module/Class/Test it covers
   | "binds" // Spec Step → Step Definition code
   | "verifies" // Test/Scenario → Production code it tests
-  | "documents"; // Doc/Markdown → Code it explains
+  | "documents" // Doc/Markdown → Code it explains
+  | "defines"; // Spec/Feature/Doc → contract/type/capability it defines
 
 export interface EdgeV1 {
   source: string; // node id

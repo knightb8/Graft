@@ -5,7 +5,7 @@
  * and file hierarchy. Users can select and deselect specific subdirectories
  * and files to dynamically focus or prune the visualizer graph and outline.
  */
-import { type VizGraph, type VizNode, colorToken, cvar, scopeOfPath } from "./data.js";
+import { type VizGraph, type VizNode, colorToken, cvar, scopeOfPath, type TriState } from "./data.js";
 
 export interface DirTreeNode {
   name: string;
@@ -121,6 +121,15 @@ export class TreePicker {
   private filterQuery = "";
   private onChange: (selected: Set<string> | null) => void;
 
+  public fileStates = new Map<string, TriState>();
+  public activeReducePath: string | null = null;
+  public circletracePath: string | null = null;
+  public onTriStateChange?: (state: {
+    fileStates: Map<string, TriState>;
+    activeReducePath: string | null;
+    circletracePath: string | null;
+  }) => void;
+
   constructor(
     host: HTMLElement,
     statsEl: HTMLElement | null,
@@ -145,16 +154,58 @@ export class TreePicker {
     return this.selectedFiles;
   }
 
+  getActiveState(): {
+    fileStates: Map<string, TriState>;
+    activeReducePath: string | null;
+    circletracePath: string | null;
+  } {
+    return {
+      fileStates: this.fileStates,
+      activeReducePath: this.activeReducePath,
+      circletracePath: this.circletracePath,
+    };
+  }
+
+  private notifyTriStateChange(): void {
+    const excluded = new Set<string>();
+    for (const [f, st] of this.fileStates) {
+      if (st === "excluded") excluded.add(f);
+    }
+    if (excluded.size === 0) {
+      this.selectedFiles = null;
+    } else {
+      this.selectedFiles = new Set(this.allKnownFiles.filter((f) => !excluded.has(f)));
+    }
+
+    this.onChange(this.selectedFiles);
+    if (this.onTriStateChange) {
+      this.onTriStateChange({
+        fileStates: this.fileStates,
+        activeReducePath: this.activeReducePath,
+        circletracePath: this.circletracePath,
+      });
+    }
+  }
+
   selectAll(): void {
+    this.fileStates.clear();
+    this.activeReducePath = null;
+    this.circletracePath = null;
     this.selectedFiles = null;
     this.render();
-    this.onChange(null);
+    this.notifyTriStateChange();
   }
 
   selectNone(): void {
+    this.fileStates.clear();
+    for (const f of this.allKnownFiles) {
+      this.fileStates.set(f, "excluded");
+    }
+    this.activeReducePath = null;
+    this.circletracePath = null;
     this.selectedFiles = new Set();
     this.render();
-    this.onChange(this.selectedFiles);
+    this.notifyTriStateChange();
   }
 
   setFilterQuery(q: string): void {
@@ -162,43 +213,83 @@ export class TreePicker {
     this.render();
   }
 
-  private isFileSelected(path: string): boolean {
-    if (this.selectedFiles === null) return true;
-    return this.selectedFiles.has(path);
+  isFileSelected(path: string): boolean {
+    const st = this.fileStates.get(path) ?? "neutral";
+    return st !== "excluded";
   }
 
-  private toggleDir(dirNode: DirTreeNode, shouldSelect: boolean): void {
-    if (this.selectedFiles === null) {
-      this.selectedFiles = new Set(this.allKnownFiles);
-    }
+  getDirState(dirNode: DirTreeNode): TriState | "mixed" {
+    if (dirNode.allFiles.length === 0) return "neutral";
+    let pinnedCount = 0;
+    let excludedCount = 0;
+    let neutralCount = 0;
     for (const f of dirNode.allFiles) {
-      if (shouldSelect) {
-        this.selectedFiles.add(f);
+      const st = this.fileStates.get(f) ?? "neutral";
+      if (st === "pinned") pinnedCount++;
+      else if (st === "excluded") excludedCount++;
+      else neutralCount++;
+    }
+    if (pinnedCount === dirNode.allFiles.length) return "pinned";
+    if (excludedCount === dirNode.allFiles.length) return "excluded";
+    if (neutralCount === dirNode.allFiles.length) return "neutral";
+    return "mixed";
+  }
+
+  cycleFileState(filePath: string): void {
+    const current = this.fileStates.get(filePath) ?? "neutral";
+    let next: TriState = "neutral";
+    if (current === "neutral") next = "pinned";
+    else if (current === "pinned") next = "excluded";
+    else next = "neutral";
+
+    if (next === "neutral") {
+      this.fileStates.delete(filePath);
+    } else {
+      this.fileStates.set(filePath, next);
+    }
+    this.render();
+    this.notifyTriStateChange();
+  }
+
+  cycleDirState(dirNode: DirTreeNode): void {
+    const current = this.getDirState(dirNode);
+    let next: TriState = "neutral";
+    if (current === "neutral") next = "pinned";
+    else if (current === "pinned") next = "excluded";
+    else if (current === "excluded") next = "neutral";
+    else next = "pinned";
+
+    for (const f of dirNode.allFiles) {
+      if (next === "neutral") {
+        this.fileStates.delete(f);
       } else {
-        this.selectedFiles.delete(f);
+        this.fileStates.set(f, next);
       }
     }
-    if (this.selectedFiles.size === this.allKnownFiles.length) {
-      this.selectedFiles = null;
-    }
     this.render();
-    this.onChange(this.selectedFiles);
+    this.notifyTriStateChange();
   }
 
-  private toggleFile(filePath: string, shouldSelect: boolean): void {
-    if (this.selectedFiles === null) {
-      this.selectedFiles = new Set(this.allKnownFiles);
-    }
-    if (shouldSelect) {
-      this.selectedFiles.add(filePath);
-    } else {
-      this.selectedFiles.delete(filePath);
-    }
-    if (this.selectedFiles.size === this.allKnownFiles.length) {
-      this.selectedFiles = null;
+  toggleDir(dirNode: DirTreeNode, shouldSelect: boolean): void {
+    for (const f of dirNode.allFiles) {
+      if (shouldSelect) {
+        this.fileStates.delete(f);
+      } else {
+        this.fileStates.set(f, "excluded");
+      }
     }
     this.render();
-    this.onChange(this.selectedFiles);
+    this.notifyTriStateChange();
+  }
+
+  toggleFile(filePath: string, shouldSelect: boolean): void {
+    if (shouldSelect) {
+      this.fileStates.delete(filePath);
+    } else {
+      this.fileStates.set(filePath, "excluded");
+    }
+    this.render();
+    this.notifyTriStateChange();
   }
 
   render(): void {
@@ -208,7 +299,8 @@ export class TreePicker {
     }
 
     const total = this.allKnownFiles.length;
-    const selectedCount = this.selectedFiles === null ? total : this.selectedFiles.size;
+    const excludedCount = [...this.fileStates.values()].filter((s) => s === "excluded").length;
+    const selectedCount = total - excludedCount;
     if (this.statsEl) {
       this.statsEl.textContent = `${selectedCount}/${total}`;
     }
@@ -235,27 +327,39 @@ export class TreePicker {
       row.className = "p-row";
       row.style.paddingLeft = `${depth * 14 + 4}px`;
 
-      // Checkbox
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.className = "p-cb";
-
       if (node.isDir) {
-        const selectedDescendants = node.allFiles.filter((f) => this.isFileSelected(f)).length;
-        if (selectedDescendants === node.allFiles.length) {
-          cb.checked = true;
-          cb.indeterminate = false;
-        } else if (selectedDescendants === 0) {
-          cb.checked = false;
-          cb.indeterminate = false;
+        const dirSt = this.getDirState(node);
+        if (dirSt === "pinned") row.classList.add("p-row-pinned");
+        else if (dirSt === "excluded") row.classList.add("p-row-excluded");
+
+        if (this.activeReducePath === node.path) row.classList.add("p-row-reduce");
+        if (this.circletracePath === node.path) row.classList.add("p-row-circle");
+
+        // Tri-state button
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "p-tristate";
+        if (dirSt === "pinned") {
+          btn.classList.add("p-tri-pinned");
+          btn.textContent = "✓";
+          btn.title = "All pinned — click to exclude directory";
+        } else if (dirSt === "excluded") {
+          btn.classList.add("p-tri-excluded");
+          btn.textContent = "×";
+          btn.title = "All excluded — click to clear";
+        } else if (dirSt === "mixed") {
+          btn.classList.add("p-tri-mixed");
+          btn.textContent = "−";
+          btn.title = "Partially filtered — click to pin all";
         } else {
-          cb.checked = false;
-          cb.indeterminate = true;
+          btn.classList.add("p-tri-neutral");
+          btn.textContent = "";
+          btn.title = "Neutral — click to pin all";
         }
 
-        cb.addEventListener("click", (ev) => {
+        btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          this.toggleDir(node, cb.checked);
+          this.cycleDirState(node);
         });
 
         // Chevron
@@ -275,9 +379,16 @@ export class TreePicker {
         badge.className = "p-badge";
         badge.textContent = `${node.allFiles.length}f`;
 
-        row.append(chev, cb, label, badge);
+        row.append(chev, btn, label, badge);
 
-        row.addEventListener("click", () => {
+        row.addEventListener("click", (ev) => {
+          if (ev.shiftKey) {
+            this.circletracePath = this.circletracePath === node.path ? null : node.path;
+            this.activeReducePath = null;
+            this.render();
+            this.notifyTriStateChange();
+            return;
+          }
           if (this.openDirs.has(node.path)) {
             this.openDirs.delete(node.path);
           } else {
@@ -298,10 +409,34 @@ export class TreePicker {
           container.appendChild(kids);
         }
       } else {
-        cb.checked = this.isFileSelected(node.path);
-        cb.addEventListener("click", (ev) => {
+        const fileSt = this.fileStates.get(node.path) ?? "neutral";
+        if (fileSt === "pinned") row.classList.add("p-row-pinned");
+        else if (fileSt === "excluded") row.classList.add("p-row-excluded");
+
+        if (this.activeReducePath === node.path) row.classList.add("p-row-reduce");
+        if (this.circletracePath === node.path) row.classList.add("p-row-circle");
+
+        // Tri-state button
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "p-tristate";
+        if (fileSt === "pinned") {
+          btn.classList.add("p-tri-pinned");
+          btn.textContent = "✓";
+          btn.title = "Pinned (in focus lineage) — click to exclude";
+        } else if (fileSt === "excluded") {
+          btn.classList.add("p-tri-excluded");
+          btn.textContent = "×";
+          btn.title = "Excluded (hidden) — click to clear";
+        } else {
+          btn.classList.add("p-tri-neutral");
+          btn.textContent = "";
+          btn.title = "Neutral — click to pin";
+        }
+
+        btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          this.toggleFile(node.path, cb.checked);
+          this.cycleFileState(node.path);
         });
 
         // Scope color dot
@@ -313,7 +448,21 @@ export class TreePicker {
         const label = document.createElement("span");
         label.className = "p-label mono";
         label.textContent = node.name;
-        label.title = node.path;
+        label.title = `${node.path} (Click to reduce, Shift+Click for Circletrace)`;
+
+        // Circletrace action button
+        const circleBtn = document.createElement("button");
+        circleBtn.type = "button";
+        circleBtn.className = "p-circle-btn" + (this.circletracePath === node.path ? " active" : "");
+        circleBtn.textContent = "◎";
+        circleBtn.title = "Circletrace blast radius (or Shift+Click)";
+        circleBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this.circletracePath = this.circletracePath === node.path ? null : node.path;
+          this.activeReducePath = null;
+          this.render();
+          this.notifyTriStateChange();
+        });
 
         // Node count badge
         const badge = document.createElement("span");
@@ -325,10 +474,18 @@ export class TreePicker {
         spacer.style.width = "12px";
         spacer.style.flex = "none";
 
-        row.append(spacer, cb, dot, label, badge);
-        row.addEventListener("click", () => {
-          cb.checked = !cb.checked;
-          this.toggleFile(node.path, cb.checked);
+        row.append(spacer, btn, dot, label, circleBtn, badge);
+
+        row.addEventListener("click", (ev) => {
+          if (ev.shiftKey) {
+            this.circletracePath = this.circletracePath === node.path ? null : node.path;
+            this.activeReducePath = null;
+          } else {
+            this.activeReducePath = this.activeReducePath === node.path ? null : node.path;
+            this.circletracePath = null;
+          }
+          this.render();
+          this.notifyTriStateChange();
         });
 
         container.appendChild(row);
@@ -340,6 +497,29 @@ export class TreePicker {
     for (const child of this.rootNode.children) {
       const el = renderNode(child, 0);
       if (el) fragment.appendChild(el);
+    }
+
+    const hasActiveFilter = Boolean(this.activeReducePath || this.circletracePath || this.fileStates.size > 0);
+    if (hasActiveFilter) {
+      const ghostBar = document.createElement("div");
+      ghostBar.className = "p-ghost-stub";
+      let msg = "";
+      if (this.circletracePath) {
+        const name = this.circletracePath.split("/").pop();
+        msg = `Circletrace: ${name}`;
+      } else if (this.activeReducePath) {
+        const name = this.activeReducePath.split("/").pop();
+        msg = `Reduced to: ${name}`;
+      } else {
+        const exc = [...this.fileStates.values()].filter((s) => s === "excluded").length;
+        const pin = [...this.fileStates.values()].filter((s) => s === "pinned").length;
+        msg = `${exc + pin} items filtered`;
+      }
+      ghostBar.innerHTML = `<span style="font-weight:600">⚡ ${msg}</span><span style="opacity:0.75;margin-left:6px;font-size:10.5px">click to reset</span>`;
+      ghostBar.addEventListener("click", () => {
+        this.selectAll();
+      });
+      fragment.appendChild(ghostBar);
     }
 
     this.host.appendChild(fragment);

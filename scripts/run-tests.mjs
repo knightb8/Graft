@@ -19,9 +19,12 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const testDir = join(repoRoot, "test");
 
+const filterArgs = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
+
 // Sorted so a failure is reported in the same order on every platform and run.
 const files = readdirSync(testDir)
   .filter((f) => f.endsWith(".test.ts"))
+  .filter((f) => filterArgs.length === 0 || filterArgs.some((pat) => f.includes(pat)))
   .sort()
   .map((f) => join(testDir, f));
 
@@ -43,7 +46,7 @@ const gitEnv = {
   GIT_CONFIG_KEY_1: "tag.gpgsign", GIT_CONFIG_VALUE_1: "false",
 };
 
-const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...files], {
+const result = spawnSync(process.execPath, ["--import", "tsx", "--test", "--test-concurrency=8", ...files], {
   cwd: repoRoot,
   stdio: "inherit",
   env: { ...process.env, ...gitEnv, LC_ALL: "C.UTF-8", LANG: "C.UTF-8" },

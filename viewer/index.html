@@ -49,8 +49,14 @@
   <button class="picker-open-tab" id="pickerOpenTab" title="Open files panel" aria-label="Open files panel" hidden>▶ Files</button>
   <div class="canvas-wrap" id="canvasWrap">
     <div class="graph" id="graphContainer" role="region" aria-label="Interactive graph visualizer"></div>
+    <div class="graph sankey-canvas" id="sankeyContainer" role="region" aria-label="Stacked column Miller-Sankey flow visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg, #0d1012);"></div>
     <div class="edgestyle" id="edgeChips"><span class="cap">Edges</span></div>
     <div class="filterbar" id="filterBar">
+      <div class="filter-group" style="border-right:1px solid var(--panel2, #242b30); padding-right:8px; margin-right:4px;">
+        <span class="cap">Canvas</span>
+        <button type="button" class="ptool-btn active" id="baseGalaxyBtn" title="2D WebGL Galaxy & Cosmos Canvas" style="font-size:11px; padding:2px 8px; background:var(--accent, #38bdf8); color:#0b0e11; font-weight:600;">🌌 Galaxy</button>
+        <button type="button" class="ptool-btn" id="baseSankeyBtn" title="5-Column Stacked Lifecycle Flow Chart (ADRs → Specs → Code → Tests → Docs)" style="font-size:11px; padding:2px 8px;">📊 Stacked Flow</button>
+      </div>
       <div class="filter-group">
         <span class="cap">Scope</span>
         <label class="scope-chip on" title="Toggle Code scope"><input type="checkbox" class="scope-cb" data-scope="code" checked><span class="sw sw-code"></span>code</label>
@@ -63,6 +69,75 @@
       </div>
       <div class="filter-group">
         <label class="scope-chip on" title="Render indirect edges between visible nodes across hidden intermediaries"><input type="checkbox" class="scope-cb" id="transitiveCb" checked><span class="sw sw-transitive"></span>transitive edges</label>
+      </div>
+      <div class="filter-group" id="galaxyViewGroup">
+        <span class="cap">View</span>
+        <label class="scope-chip on" id="aggregateChip" title="Aggregate functions and methods into parent file containers"><input type="checkbox" id="aggregateCb" checked>aggregate</label>
+        <label class="scope-chip" id="bloomsChip" title="Toggle radiant cluster blooms and community badges"><input type="checkbox" id="bloomsCb">blooms</label>
+        <label class="scope-chip on" id="rainbowChip" title="Toggle rainbow edge coloring by relation type"><input type="checkbox" id="rainbowCb" checked>rainbow</label>
+        <label class="scope-chip on" id="rebounceChip" title="Re-bounce galaxy layout in simulation style when filters change (uncheck to hold node positions)"><input type="checkbox" id="rebounceCb" checked>re-bounce</label>
+        <div class="weights-menu-wrap" style="position:relative; display:inline-block;">
+          <button type="button" class="ptool-btn" id="contractionToggle" title="Configure Cosmos Gravity & Edge Pull Weights" style="margin-left:4px; font-size:11px; padding:2px 8px;">☍ Pull: Coupled ▾</button>
+          <div class="weights-popover" id="weightsMenu" hidden style="position:absolute; top:calc(100% + 6px); left:0; z-index:120; width:280px; background:var(--panel, #15181b); border:1px solid var(--panel2, #242b30); border-radius:8px; box-shadow:0 12px 32px rgba(0,0,0,0.55); padding:12px; font-size:12px; color:var(--ink, #e7e9ea);">
+            <div style="font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+              <span>Cosmos Gravity Tuning</span>
+              <button type="button" id="closeWeightsMenu" style="background:none; border:none; color:var(--muted, #8b9298); cursor:pointer; font-size:14px; line-height:1;">✕</button>
+            </div>
+            <div style="font-size:10.5px; color:var(--muted, #8b9298); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">Presets</div>
+            <div class="preset-pills" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px;">
+              <button type="button" class="ptool-btn preset-btn" data-cosmos-preset="coupled" style="font-size:10.5px; padding:2px 6px;">Balanced (Coupled)</button>
+              <button type="button" class="ptool-btn preset-btn" data-cosmos-preset="code" style="font-size:10.5px; padding:2px 6px;">Code-Centric</button>
+              <button type="button" class="ptool-btn preset-btn" data-cosmos-preset="spec" style="font-size:10.5px; padding:2px 6px;">Spec / Requirements-Centric</button>
+              <button type="button" class="ptool-btn preset-btn" data-cosmos-preset="doc" style="font-size:10.5px; padding:2px 6px;">Doc / ADR-Centric</button>
+              <button type="button" class="ptool-btn preset-btn" data-cosmos-preset="directory" style="font-size:10.5px; padding:2px 6px;">Directory Tree</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:11px;">
+                  <span>Code / Uses Pull</span><span id="valDependency" style="color:var(--amber, #fbbf24);">1.8</span>
+                </div>
+                <input type="range" id="sliderDependency" min="0" max="4" step="0.1" value="1.8" style="width:100%; cursor:pointer;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:11px;">
+                  <span>Spec / Covers Pull</span><span id="valContract" style="color:var(--features, #10b981);">2.5</span>
+                </div>
+                <input type="range" id="sliderContract" min="0" max="4" step="0.1" value="2.5" style="width:100%; cursor:pointer;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:11px;">
+                  <span>Doc / Influences Pull</span><span id="valAssociation" style="color:var(--docs, #a855f7);">2.0</span>
+                </div>
+                <input type="range" id="sliderAssociation" min="0" max="4" step="0.1" value="2.0" style="width:100%; cursor:pointer;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:11px;">
+                  <span>Structure / Part-Of Pull</span><span id="valStructure" style="color:var(--accent, #38bdf8);">1.2</span>
+                </div>
+                <input type="range" id="sliderStructure" min="0" max="4" step="0.1" value="1.2" style="width:100%; cursor:pointer;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:11px;">
+                  <span>Support Sink Pull</span><span id="valSupport" style="color:var(--muted, #8b9298);">0.15</span>
+                </div>
+                <input type="range" id="sliderSupport" min="0" max="1" step="0.05" value="0.15" style="width:100%; cursor:pointer;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-size:11px;">
+                  <span>Cluster Gap (px)</span><span id="valClusterGap" style="color:var(--ink, #e7e9ea);">38</span>
+                </div>
+                <input type="range" id="sliderClusterGap" min="10" max="120" step="2" value="38" style="width:100%; cursor:pointer;">
+              </div>
+            </div>
+            <div style="margin-top:12px; padding-top:8px; border-top:1px solid var(--edge, #2a3439); display:flex; align-items:center; justify-content:space-between;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; user-select:none; color:var(--ink, #e7e9ea);">
+                <input type="checkbox" id="toggleHeuristics" checked style="cursor:pointer;">
+                <span>Auto-detect support & type sinks</span>
+              </label>
+              <button type="button" id="btnResetWeights" class="ptool-btn" style="font-size:10.5px; padding:2px 8px;">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="lcount" id="lcount"></div>

@@ -791,7 +791,10 @@ program
       console.error(`✗ no context graph at ${contextDir} — run \`graft build --deep\` first`);
       process.exit(1);
     }
-    const viewerDir = fileURLToPath(new URL("./viewer/", import.meta.url)); // prebuilt
+    const directViewer = fileURLToPath(new URL("./viewer/", import.meta.url));
+    const viewerDir = existsSync(directViewer)
+      ? directViewer
+      : fileURLToPath(new URL("../dist/viewer/", import.meta.url));
 
     const filterCriteria = (opts.scope || opts.excludeDir?.length)
       ? { scope: opts.scope as any, excludeDirs: opts.excludeDir }

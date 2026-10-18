@@ -12,13 +12,22 @@
  * outgoing edges (amber), keeps direct neighbors visible, and dims
  * the rest of the graph via reactive WebGL reducers.
  */
-import Sigma from "sigma";
+import "./webgl-shim.js";
+import Sigma, { DEFAULT_STYLES } from "sigma";
+import { pathCurved, pathLine, pathLoop, extremityArrow } from "sigma/rendering";
 import { MultiDirectedGraph } from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import {
   type VizGraph, type NodeOwner, type TripartiteScope, type ConcreteScope,
+  type EdgeContractionMode, type CosmosWeightTuning, type EdgeBundleMeta,
+  COSMOS_PRESETS, SEMANTIC_RELATION_WEIGHTS, SUPPORT_CLASS_EDGE_WEIGHT,
+  detectSupportNodes, computeHierarchicalEdgeBundles, seedClusteredPositions,
   famOf, chipKey, colorToken, cvar, matchNodeFilter, scopeOfNode,
-  generateTransitiveEdges,
+  generateTransitiveEdges, relationColor, aggregateGraphToParents, parentIdOfNode,
+  clusterKeyOfNode, galaxyColorOfCluster, computeEdgeLayoutWeight, separateGalaxies,
+  computeGalaxyLandmarks, relaxLocalNeighborhood, type TriStateFilterResult,
+  extractTreeBackbone, relaxAndSeparateGalaxiesVectorized, lerpNodePositions, FlatSpatialGrid,
+  consolidateOrphanClusters, synthesizeDirectoryTree, applyCosmosConcentricLayout,
 } from "./data.js";
 
 export interface SimNode {
@@ -32,6 +41,8 @@ export interface SimNode {
   owners?: NodeOwner[];
   x: number;
   y: number;
+  clusterKey?: string;
+  isSupportNode?: boolean;
 }
 
 export interface NodeAttrs {
@@ -50,6 +61,7 @@ export interface NodeAttrs {
   labelColor?: string;
   labelBackgroundColor?: string;
   labelBackgroundPadding?: number;
+  isSupportNode?: boolean;
 }
 
 export interface EdgeAttrs {
@@ -60,8 +72,20 @@ export interface EdgeAttrs {
   via?: string[];
   size: number;
   color: string;
+  weight?: number;
+  intraCluster?: boolean;
   hidden?: boolean;
   visibility?: "visible" | "hidden";
+  isBackbone?: boolean;
+  isSupportEdge?: boolean;
+  restOpacity?: number;
+  restSize?: number;
+  path?: string;
+  curvature?: number;
+  head?: string;
+  label?: string;
+  labelVisibility?: "visible" | "hidden";
+  forceLabel?: boolean;
 }
 
 function colorWithAlpha(color: string, alpha: number): string {
@@ -94,25 +118,6 @@ function parseColorToRgba(color: string, alpha: number): [number, number, number
   return [0.22, 0.74, 0.97, alpha];
 }
 
-function clusterKeyOfNode(node: SimNode): { key: string; name: string } {
-  if (node.sources && node.sources.length > 0) {
-    const rawPath = node.sources[0].split(" · ")[0].trim();
-    const parts = rawPath.replace(/\\/g, "/").split("/");
-    if (parts.length > 1) {
-      const dir = parts.slice(0, parts.length > 2 ? 2 : 1).join("/");
-      return { key: dir, name: dir };
-    }
-  }
-  if (node.id.includes("/")) {
-    const parts = node.id.split("#")[0].replace(/\\/g, "/").split("/");
-    if (parts.length > 1) {
-      const dir = parts.slice(0, parts.length > 2 ? 2 : 1).join("/");
-      return { key: dir, name: dir };
-    }
-  }
-  return { key: node.scope, name: node.scope.toUpperCase() };
-}
-
 export class GraphView {
   private container: HTMLElement;
   private graph: MultiDirectedGraph<NodeAttrs, EdgeAttrs>;
@@ -141,13 +146,367 @@ export class GraphView {
   selectedFiles?: Set<string>;
   showTransitive = true;
   showOwners = true;
+  showBlooms = false;
+  rainbowEdges = true;
+  aggregateToParent = true;
+  private bloomSlowFrameCount = 0;
+  onBloomsThrottled?: () => void;
+  private sourceGraph: VizGraph | null = null;
+  private lastLayoutKey = "";
+  private draggedNode: string | null = null;
   onSelect: (id: string | null) => void = () => {};
   cachedVisibleCount = 0;
   cachedMaxDeg = 0;
   landmarkSet = new Set<string>();
+  triStateResult: TriStateFilterResult | null = null;
+  public autoRebounce = true;
+  public contractionMode: EdgeContractionMode = "coupled";
+  public weightTuning: CosmosWeightTuning = { ...COSMOS_PRESETS.coupled };
+  public supportNodes: Set<string> = new Set<string>();
+  private rebounceAnimId: number | null = null;
+  private dragSimulator: {
+    activeNodes: SimNode[];
+    idToIndex: Map<string, number>;
+    posX: Float32Array;
+    posY: Float32Array;
+    velX: Float32Array;
+    velY: Float32Array;
+    forceX: Float32Array;
+    forceY: Float32Array;
+    radii: Float32Array;
+    nodeStiffSum: Float32Array;
+    pinnedIdx: number;
+    edgeU: Int32Array;
+    edgeV: Int32Array;
+    edgeRest: Float32Array;
+    edgeStiff: Float32Array;
+    edgeCount: number;
+    settlingFrames: number;
+  } | null = null;
+  private dragAnimId: number | null = null;
+  private lastDraggedNode: string | null = null;
 
-  constructor(container: HTMLElement | SVGElement) {
-    if (container instanceof SVGElement) {
+  private loadPersistedCosmosConfig(): { mode?: EdgeContractionMode; tuning?: Partial<CosmosWeightTuning> } | null {
+    if (typeof localStorage === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("graft.cosmosConfig");
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  private persistCosmosConfig(): void {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem("graft.cosmosConfig", JSON.stringify({
+        mode: this.contractionMode,
+        tuning: this.weightTuning,
+      }));
+    } catch {
+      // ignore
+    }
+  }
+
+  setContractionMode(mode: EdgeContractionMode): void {
+    this.contractionMode = mode;
+    this.weightTuning = { ...(COSMOS_PRESETS[mode] ?? COSMOS_PRESETS.coupled) };
+    const heuristicsActive = this.weightTuning.useHeuristics !== false;
+    this.graph.forEachEdge((edgeKey, attrs) => {
+      const isIntra = attrs.intraCluster !== false;
+      const target = this.graph.target(edgeKey);
+      const isSupportTarget = heuristicsActive && (this.supportNodes?.has(target) ?? false);
+      const weight = computeEdgeLayoutWeight(attrs.relation, isIntra, !!attrs.transitive, mode, isSupportTarget, this.weightTuning);
+      this.graph.setEdgeAttribute(edgeKey, "weight", weight);
+      this.graph.setEdgeAttribute(edgeKey, "isSupportEdge", isSupportTarget && (famOf(attrs.relation) === "dependency" || attrs.relation === "references"));
+    });
+    this.persistCosmosConfig();
+    if (this.autoRebounce) {
+      this.rebounceVisible();
+    }
+  }
+
+  setWeightTuning(tuning: Partial<CosmosWeightTuning>): void {
+    this.weightTuning = { ...this.weightTuning, ...tuning };
+    if (tuning.useHeuristics !== undefined && this.rawGraph) {
+      if (this.weightTuning.useHeuristics === false) {
+        this.supportNodes.clear();
+      } else {
+        const nodesWithScope = this.rawGraph.nodes.map((n) => ({ ...n, scope: scopeOfNode(n) }));
+        const nodeClusterKeys = consolidateOrphanClusters(nodesWithScope);
+        this.supportNodes = detectSupportNodes(this.rawGraph.nodes, this.rawGraph.edges, nodeClusterKeys);
+      }
+      for (const n of this.nodes) {
+        n.isSupportNode = this.supportNodes.has(n.id);
+        if (this.graph.hasNode(n.id)) {
+          this.graph.setNodeAttribute(n.id, "isSupportNode", n.isSupportNode);
+          this.graph.setNodeAttribute(n.id, "label", n.isSupportNode ? `◈ ${n.name}` : n.name);
+        }
+      }
+    }
+    const heuristicsActive = this.weightTuning.useHeuristics !== false;
+    this.graph.forEachEdge((edgeKey, attrs) => {
+      const isIntra = attrs.intraCluster !== false;
+      const target = this.graph.target(edgeKey);
+      const isSupportTarget = heuristicsActive && (this.supportNodes?.has(target) ?? false);
+      const weight = computeEdgeLayoutWeight(attrs.relation, isIntra, !!attrs.transitive, this.contractionMode, isSupportTarget, this.weightTuning);
+      this.graph.setEdgeAttribute(edgeKey, "weight", weight);
+      this.graph.setEdgeAttribute(edgeKey, "isSupportEdge", isSupportTarget && (famOf(attrs.relation) === "dependency" || attrs.relation === "references"));
+    });
+    this.persistCosmosConfig();
+    this.restyle();
+    if (this.autoRebounce) {
+      this.rebounceVisible();
+    }
+  }
+
+  private initDragSimulation(draggedId: string, coords: { x: number; y: number }): void {
+    const existingNode = this.nodeMap.get(draggedId);
+    const connectedIds = new Set<string>([draggedId]);
+    if (this.graph.hasNode(draggedId)) {
+      this.graph.forEachNeighbor(draggedId, (nbr) => {
+        connectedIds.add(nbr);
+        this.graph.forEachNeighbor(nbr, (n2) => connectedIds.add(n2));
+      });
+    }
+    const cKey = existingNode?.clusterKey ?? clusterKeyOfNode(existingNode ?? { id: draggedId, scope: "code" }).key;
+    for (const n of this.nodes) {
+      if (this.isNodeShown(n) && (n.clusterKey === cKey || connectedIds.has(n.id))) {
+        connectedIds.add(n.id);
+      }
+    }
+    if (this.nodes.length <= 300) {
+      for (const n of this.nodes) {
+        if (this.isNodeShown(n)) connectedIds.add(n.id);
+      }
+    }
+
+    const activeNodes = this.nodes.filter((n) => connectedIds.has(n.id) && this.isNodeShown(n));
+    const M = activeNodes.length;
+    const idToIndex = new Map<string, number>();
+    const posX = new Float32Array(M);
+    const posY = new Float32Array(M);
+    const velX = new Float32Array(M);
+    const velY = new Float32Array(M);
+    const forceX = new Float32Array(M);
+    const forceY = new Float32Array(M);
+    const radii = new Float32Array(M);
+    const nodeStiffSum = new Float32Array(M);
+
+    let pinnedIdx = -1;
+    for (let i = 0; i < M; i++) {
+      const n = activeNodes[i];
+      idToIndex.set(n.id, i);
+      // Seed with pre-drag resting coordinates so initial edge rest lengths are measured accurately
+      posX[i] = Number.isFinite(n.x) ? n.x : 0;
+      posY[i] = Number.isFinite(n.y) ? n.y : 0;
+      radii[i] = n.r ?? 6;
+      if (n.id === draggedId) pinnedIdx = i;
+    }
+
+    const maxEdges = Math.max(128, this.graph.size + 16);
+    const edgeU = new Int32Array(maxEdges);
+    const edgeV = new Int32Array(maxEdges);
+    const edgeRest = new Float32Array(maxEdges);
+    const edgeStiff = new Float32Array(maxEdges);
+    let edgeCount = 0;
+    const pairIndexMap = new Map<number, number>();
+
+    this.graph.forEachEdge((edgeKey, attrs) => {
+      if (edgeCount >= maxEdges) return;
+      const src = this.graph.source(edgeKey);
+      const tgt = this.graph.target(edgeKey);
+      const u = idToIndex.get(src);
+      const v = idToIndex.get(tgt);
+      if (u !== undefined && v !== undefined && u !== v) {
+        const sameCluster = attrs.intraCluster ?? (activeNodes[u].clusterKey === activeNodes[v].clusterKey);
+        const fam = famOf(attrs.relation);
+        const baseRest = sameCluster ? (fam === "structure" ? 38.0 : 50.0) : 130.0;
+        const baseStiff = sameCluster ? (fam === "structure" ? 0.35 : 0.24) : 0.1;
+        const weight = computeEdgeLayoutWeight(attrs.relation, sameCluster, attrs.transitive, this.contractionMode);
+        const pinBoost = u === pinnedIdx || v === pinnedIdx ? 1.8 : 1.0;
+        const stiff = baseStiff * Math.max(0.4, Math.min(2.5, weight)) * pinBoost;
+
+        const lo = u < v ? u : v;
+        const hi = u < v ? v : u;
+        const pairKey = lo * M + hi;
+        const existingEdgeIdx = pairIndexMap.get(pairKey);
+        if (existingEdgeIdx !== undefined) {
+          if (stiff > edgeStiff[existingEdgeIdx]) {
+            const diff = stiff - edgeStiff[existingEdgeIdx];
+            edgeStiff[existingEdgeIdx] = stiff;
+            nodeStiffSum[u] += diff;
+            nodeStiffSum[v] += diff;
+          }
+          return;
+        }
+
+        const dx0 = posX[v] - posX[u];
+        const dy0 = posY[v] - posY[u];
+        const d0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || baseRest;
+
+        pairIndexMap.set(pairKey, edgeCount);
+        edgeU[edgeCount] = u;
+        edgeV[edgeCount] = v;
+        edgeRest[edgeCount] = Math.max(28.0, Math.min(d0, sameCluster ? 85.0 : 165.0));
+        edgeStiff[edgeCount] = stiff;
+        nodeStiffSum[u] += stiff;
+        nodeStiffSum[v] += stiff;
+        edgeCount++;
+      }
+    });
+
+    if (pinnedIdx >= 0 && Number.isFinite(coords.x) && Number.isFinite(coords.y)) {
+      posX[pinnedIdx] = coords.x;
+      posY[pinnedIdx] = coords.y;
+    }
+
+    this.dragSimulator = {
+      activeNodes,
+      idToIndex,
+      posX,
+      posY,
+      velX,
+      velY,
+      forceX,
+      forceY,
+      radii,
+      nodeStiffSum,
+      pinnedIdx,
+      edgeU,
+      edgeV,
+      edgeRest,
+      edgeStiff,
+      edgeCount,
+      settlingFrames: 0,
+    };
+  }
+
+  private stepDragVerlet(alpha: number): void {
+    if (!this.dragSimulator) return;
+    const {
+      activeNodes, posX, posY, velX, velY, forceX, forceY, radii,
+      nodeStiffSum, pinnedIdx, edgeU, edgeV, edgeRest, edgeStiff, edgeCount,
+    } = this.dragSimulator;
+    const M = activeNodes.length;
+    forceX.fill(0);
+    forceY.fill(0);
+
+    for (let k = 0; k < edgeCount; k++) {
+      const u = edgeU[k];
+      const v = edgeV[k];
+      const dx = posX[v] - posX[u];
+      const dy = posY[v] - posY[u];
+      const d = Math.sqrt(dx * dx + dy * dy) || 1.0;
+      const force = ((d - edgeRest[k]) / d) * edgeStiff[k];
+      const fx = dx * force;
+      const fy = dy * force;
+      forceX[u] += fx;
+      forceY[u] += fy;
+      forceX[v] -= fx;
+      forceY[v] -= fy;
+    }
+
+    // Normalize spring force by incident stiffness sum (d3-force link degree normalization)
+    // so high-degree hubs never exceed the Verlet stability limit and explode off-screen
+    for (let i = 0; i < M; i++) {
+      const norm = Math.max(1.0, nodeStiffSum[i] * 1.35);
+      forceX[i] /= norm;
+      forceY[i] /= norm;
+    }
+
+    for (let i = 0; i < M; i++) {
+      for (let j = i + 1; j < M; j++) {
+        const dx = posX[j] - posX[i];
+        const dy = posY[j] - posY[i];
+        const d = Math.sqrt(dx * dx + dy * dy) || 0.1;
+        const minD = radii[i] + radii[j] + 10.0;
+        if (d < minD) {
+          const push = ((minD - d) / d) * 0.18;
+          forceX[i] -= dx * push;
+          forceY[i] -= dy * push;
+          forceX[j] += dx * push;
+          forceY[j] += dy * push;
+        }
+      }
+    }
+
+    const decay = 0.82;
+    const maxSpeed = 24.0;
+    const maxSpeedSq = maxSpeed * maxSpeed;
+    for (let i = 0; i < M; i++) {
+      if (i === pinnedIdx && this.draggedNode) {
+        velX[i] = 0;
+        velY[i] = 0;
+        continue;
+      }
+      let vx = (velX[i] + forceX[i] * alpha) * decay;
+      let vy = (velY[i] + forceY[i] * alpha) * decay;
+      const vSq = vx * vx + vy * vy;
+      if (vSq > maxSpeedSq) {
+        const scale = maxSpeed / Math.sqrt(vSq);
+        vx *= scale;
+        vy *= scale;
+      }
+      if (!Number.isFinite(vx)) vx = 0;
+      if (!Number.isFinite(vy)) vy = 0;
+      velX[i] = vx;
+      velY[i] = vy;
+      posX[i] += vx;
+      posY[i] += vy;
+    }
+
+    for (let i = 0; i < M; i++) {
+      const n = activeNodes[i];
+      if (!Number.isFinite(posX[i]) || !Number.isFinite(posY[i])) continue;
+      n.x = posX[i];
+      n.y = posY[i];
+      if (this.graph.hasNode(n.id)) {
+        this.graph.setNodeAttribute(n.id, "x", posX[i]);
+        this.graph.setNodeAttribute(n.id, "y", posY[i]);
+      }
+    }
+  }
+
+  private spatialGrid = new FlatSpatialGrid();
+  private bloomScreenX = new Float32Array(256);
+  private bloomScreenY = new Float32Array(256);
+  private bloomClusterIds = new Int32Array(256);
+  private bloomNeighbors = new Int32Array(256);
+  private bloomCloseness = new Float32Array(256);
+  private bloomInstances = new Float32Array(256 * 8);
+  private clusterIdMap = new Map<string, number>();
+  private lastTransitiveSignature = "";
+  private themeColors = {
+    ink: "#E7E9EA",
+    panel: "#15181B",
+    chip: "#1C2125",
+    muted: "#8B9298",
+    edge: "#3b4d54",
+    amber: "#fbbf24",
+    accent: "#38bdf8",
+  };
+
+  private refreshThemeColors(): void {
+    this.themeColors = {
+      ink: cvar("--ink") || "#E7E9EA",
+      panel: cvar("--panel") || "#15181B",
+      chip: cvar("--chip") || "#1C2125",
+      muted: cvar("--muted") || "#8B9298",
+      edge: cvar("--edge") || "#3b4d54",
+      amber: cvar("--amber") || "#fbbf24",
+      accent: cvar("--accent") || "#38bdf8",
+    };
+  }
+
+  setTriStateFilter(result: TriStateFilterResult | null): void {
+    this.triStateResult = result;
+    this.restyle();
+  }
+
+  constructor(container: HTMLElement | SVGElement | any) {
+    if (typeof SVGElement !== "undefined" && container instanceof SVGElement) {
       const div = document.createElement("div");
       div.className = container.getAttribute("class") || "graph";
       div.id = container.id || "graphContainer";
@@ -156,127 +515,307 @@ export class GraphView {
     } else {
       this.container = container;
     }
-    this.container.style.position = "relative";
+    if (this.container && this.container.style) {
+      this.container.style.position = "relative";
+    }
+
+    const saved = this.loadPersistedCosmosConfig();
+    if (saved) {
+      if (saved.mode && COSMOS_PRESETS[saved.mode]) {
+        this.contractionMode = saved.mode;
+      }
+      const basePreset = COSMOS_PRESETS[this.contractionMode] ?? COSMOS_PRESETS.coupled;
+      this.weightTuning = { ...basePreset, ...(saved.tuning ?? {}) };
+    }
 
     this.graph = new MultiDirectedGraph<NodeAttrs, EdgeAttrs>();
 
-    this.sigma = new Sigma(this.graph, this.container, {
-      settings: {
-        renderLabels: true,
-        renderEdgeLabels: false,
-        enableNodeDrag: true,
-        stagePadding: 50,
-        labelRenderedSizeThreshold: 8.0,
-        labelDensity: 0.75,
-        labelGridCellSize: 110,
-        itemSizesReference: "screen",
-        zoomToSizeRatioFunction: Math.sqrt,
-        autoRescale: false,
-        minEdgeThickness: 1,
-      },
-      nodeReducer: (nodeId, data) => this.reduceNode(nodeId, data),
-      edgeReducer: (edgeId, data) => this.reduceEdge(edgeId, data),
-    });
-
     try {
-      this.archGL = this.sigma.createWebGLContext("archipelago", {
-        beforeLayer: "stage",
-        style: { pointerEvents: "none" },
+      this.sigma = new Sigma(this.graph, this.container, {
+        settings: {
+          renderLabels: true,
+          renderEdgeLabels: true,
+          enableNodeDrag: true,
+          stagePadding: 50,
+          labelRenderedSizeThreshold: 8.0,
+          labelDensity: 0.75,
+          labelGridCellSize: 110,
+          itemSizesReference: "screen",
+          zoomToSizeRatioFunction: Math.sqrt,
+          autoRescale: false,
+          minEdgeThickness: 1,
+        },
+        primitives: {
+          edges: {
+            paths: [
+              pathCurved({ segments: 18, curvature: { attribute: "curvature", default: 0.16 } }),
+              pathLine(),
+              pathLoop(),
+            ],
+            extremities: [extremityArrow({ lengthRatio: 4.5, widthRatio: 3.5 })],
+            defaultHead: "arrow",
+          },
+        },
+        styles: {
+          edges: {
+            ...DEFAULT_STYLES.edges,
+            path: { attribute: "path", defaultValue: "curved" },
+            head: { attribute: "head", defaultValue: "arrow" },
+            size: { attribute: "size", defaultValue: 1.4 },
+            color: { attribute: "color", defaultValue: "#38bdf8" },
+          },
+        },
+        nodeReducer: (nodeId, data) => this.reduceNode(nodeId, data),
+        edgeReducer: (edgeId, data) => this.reduceEdge(edgeId, data),
       });
-      this.initArchipelagoWebGL();
     } catch {
-      this.archGL = null;
+      this.sigma = null as any;
     }
 
-    try {
-      this.archBadgeCanvas = this.sigma.createCanvas("archipelago-badges", {
-        beforeLayer: "mouse",
-        style: { pointerEvents: "none" },
+    if (this.sigma) {
+      try {
+        this.archGL = this.sigma.createWebGLContext("archipelago", {
+          beforeLayer: "stage",
+          style: { pointerEvents: "none" },
+        });
+        this.initArchipelagoWebGL();
+      } catch {
+        this.archGL = null;
+      }
+
+      try {
+        this.archBadgeCanvas = this.sigma.createCanvas("archipelago-badges", {
+          beforeLayer: "mouse",
+          style: { pointerEvents: "none" },
+        });
+        this.archBadgeCtx = this.archBadgeCanvas.getContext("2d");
+      } catch {
+        this.archBadgeCanvas = null;
+        this.archBadgeCtx = null;
+      }
+
+      this.sigma.on("clickNode", (event) => {
+        this.select(event.node);
       });
-      this.archBadgeCtx = this.archBadgeCanvas.getContext("2d");
-    } catch {
-      this.archBadgeCanvas = null;
-      this.archBadgeCtx = null;
-    }
 
-    this.sigma.on("clickNode", (event) => {
-      this.select(event.node);
-    });
+      this.sigma.on("clickStage", () => {
+        this.select(null);
+      });
 
-    this.sigma.on("clickStage", () => {
-      this.select(null);
-    });
+      this.sigma.on("enterNode", (event) => {
+        this.hovered = event.node;
+        this.hoverNeighbors.clear();
+        if (this.graph.hasNode(event.node)) {
+          this.graph.forEachNeighbor(event.node, (nbr) => {
+            this.hoverNeighbors.add(nbr);
+          });
+        }
+        this.sigma?.refresh();
+        this.drawArchipelago();
+      });
 
-    this.sigma.on("enterNode", (event) => {
-      this.hovered = event.node;
-      this.hoverNeighbors.clear();
-      if (this.graph.hasNode(event.node)) {
-        this.graph.forEachNeighbor(event.node, (nbr) => {
-          this.hoverNeighbors.add(nbr);
+      this.sigma.on("leaveNode", () => {
+        this.hovered = null;
+        this.hoverNeighbors.clear();
+        this.sigma?.refresh();
+        this.drawArchipelago();
+      });
+
+      this.sigma.getCamera().on("updated", () => {
+        this.drawArchipelago();
+      });
+
+      if (typeof window !== "undefined") {
+        window.addEventListener("resize", () => {
+          this.drawArchipelago();
         });
       }
-      this.sigma.refresh();
-      this.drawArchipelago();
-    });
 
-    this.sigma.on("leaveNode", () => {
-      this.hovered = null;
-      this.hoverNeighbors.clear();
-      this.sigma.refresh();
-      this.drawArchipelago();
-    });
+      this.sigma.on("nodeDrag", (e) => {
+        this.draggedNode = e.node;
+        this.lastDraggedNode = e.node;
+        const hasDragSession = Boolean((this.sigma as any)?.internals?.dragManager?.session);
+        const gx = this.graph.hasNode(e.node) ? this.graph.getNodeAttribute(e.node, "x") : undefined;
+        const gy = this.graph.hasNode(e.node) ? this.graph.getNodeAttribute(e.node, "y") : undefined;
+        const coords = (hasDragSession && typeof gx === "number" && typeof gy === "number" && Number.isFinite(gx) && Number.isFinite(gy))
+          ? { x: gx, y: gy }
+          : this.sigma.viewportToGraph(e.event);
 
-    this.sigma.getCamera().on("updated", () => {
-      this.drawArchipelago();
-    });
+        if (
+          !this.dragSimulator ||
+          this.dragSimulator.pinnedIdx === -1 ||
+          this.dragSimulator.activeNodes[this.dragSimulator.pinnedIdx]?.id !== e.node
+        ) {
+          this.initDragSimulation(e.node, coords);
+        } else {
+          this.dragSimulator.posX[this.dragSimulator.pinnedIdx] = coords.x;
+          this.dragSimulator.posY[this.dragSimulator.pinnedIdx] = coords.y;
+        }
 
-    window.addEventListener("resize", () => {
-      this.drawArchipelago();
-    });
+        // Always step at least 1 physics tick immediately (essential for synchronous unit tests)
+        this.stepDragVerlet(0.25);
 
-    this.sigma.on("nodeDrag", (e) => {
-      const coords = this.sigma.viewportToGraph(e.event);
-      this.graph.setNodeAttribute(e.node, "x", coords.x);
-      this.graph.setNodeAttribute(e.node, "y", coords.y);
-      const node = this.nodeMap.get(e.node);
-      if (node) {
-        node.x = coords.x;
-        node.y = coords.y;
-      }
-      this.drawArchipelago();
-    });
+        if (this.dragAnimId === null && typeof requestAnimationFrame !== "undefined") {
+          const runDragLoop = () => {
+            if (this.draggedNode) {
+              this.stepDragVerlet(0.25);
+              this.drawArchipelago();
+              this.dragAnimId = requestAnimationFrame(runDragLoop);
+            } else if (this.dragSimulator && this.dragSimulator.settlingFrames > 0) {
+              this.dragSimulator.settlingFrames--;
+              const decayAlpha = 0.25 * (this.dragSimulator.settlingFrames / 25);
+              this.stepDragVerlet(decayAlpha);
+              this.drawArchipelago();
+              this.dragAnimId = requestAnimationFrame(runDragLoop);
+            } else {
+              this.dragAnimId = null;
+              this.dragSimulator = null;
+              this.sigma?.refresh();
+              this.drawArchipelago();
+            }
+          };
+          this.dragAnimId = requestAnimationFrame(runDragLoop);
+        }
+
+        this.drawArchipelago();
+      });
+
+      this.sigma.on("nodeDragEnd", () => {
+        const releasedNode = this.draggedNode || this.lastDraggedNode;
+        this.draggedNode = null;
+        if (this.dragSimulator) {
+          this.dragSimulator.pinnedIdx = -1;
+          this.dragSimulator.settlingFrames = 25;
+        }
+
+        if (typeof requestAnimationFrame === "undefined") {
+          if (this.dragSimulator) {
+            for (let f = 25; f > 0; f--) {
+              this.stepDragVerlet(0.25 * (f / 25));
+            }
+          }
+          if (releasedNode && this.graph.hasNode(releasedNode)) {
+            const neighborIds = new Set<string>();
+            this.graph.forEachNeighbor(releasedNode, (nbr) => {
+              neighborIds.add(nbr);
+            });
+            relaxLocalNeighborhood(this.nodes, releasedNode, neighborIds, 8);
+            for (const nbr of neighborIds) {
+              const n = this.nodeMap.get(nbr);
+              if (n && this.graph.hasNode(nbr)) {
+                this.graph.setNodeAttribute(nbr, "x", n.x);
+                this.graph.setNodeAttribute(nbr, "y", n.y);
+              }
+            }
+          }
+          this.dragSimulator = null;
+        }
+
+        this.sigma?.refresh();
+        this.drawArchipelago();
+      });
+    }
   }
 
   /** Load (or morph into) a new dataset. */
   setData(graph: VizGraph, tab: "context" | "code"): void {
+    const layoutKey = `${tab}:${tab === "code" ? this.aggregateToParent : false}`;
+    const canReusePositions = this.lastLayoutKey === layoutKey && this.graph.order > 0;
+    this.lastLayoutKey = layoutKey;
+
+    this.lastTransitiveSignature = "";
     this.tab = tab;
-    this.rawGraph = graph;
+    this.sourceGraph = graph;
+    const effectiveGraph = (this.aggregateToParent && tab === "code")
+      ? aggregateGraphToParents(graph)
+      : graph;
+    this.rawGraph = effectiveGraph;
 
     const deg: Record<string, number> = {};
-    for (const e of graph.edges) {
+    for (const e of effectiveGraph.edges) {
       deg[e.source] = (deg[e.source] ?? 0) + 1;
       deg[e.target] = (deg[e.target] ?? 0) + 1;
     }
 
     const prevPositions = new Map<string, { x: number; y: number }>();
-    if (this.graph.order > 0) {
+    if (canReusePositions) {
       this.graph.forEachNode((id, attrs) => {
         prevPositions.set(id, { x: attrs.x, y: attrs.y });
       });
     }
 
-    this.graph.clear();
+    // Build a detached Graphology instance so adding 3,000+ nodes and 12,000+ edges
+    // does not fire 15,000+ synchronous Sigma WebGL buffer/event callbacks.
+    const nextGraph = new MultiDirectedGraph<NodeAttrs, EdgeAttrs>();
     this.nodeMap.clear();
 
-    const W = this.container.clientWidth || 800;
-    const H = this.container.clientHeight || 600;
+    // Group nodes by architectural subsystem cluster and consolidate 1-node orphan clusters
+    const nodesWithScope = effectiveGraph.nodes.map((n) => ({ ...n, scope: scopeOfNode(n) }));
+    const nodeClusterKeys = consolidateOrphanClusters(nodesWithScope);
+    const supportNodes = (this.weightTuning?.useHeuristics !== false)
+      ? detectSupportNodes(effectiveGraph.nodes, effectiveGraph.edges, nodeClusterKeys)
+      : new Set<string>();
+    this.supportNodes = supportNodes;
+    const clusterHubs = new Map<string, { id: string; deg: number }>();
+    const clusterTotals = new Map<string, number>();
+    for (const n of effectiveGraph.nodes) {
+      const cKey = nodeClusterKeys.get(n.id) ?? "root";
+      clusterTotals.set(cKey, (clusterTotals.get(cKey) ?? 0) + 1);
+      const d = (deg[n.id] ?? 0) + (n.type === "module" ? 500 : 0);
+      const prevHub = clusterHubs.get(cKey);
+      if (!prevHub || d > prevHub.deg) {
+        clusterHubs.set(cKey, { id: n.id, deg: d });
+      }
+    }
 
-    const initialR = graph.nodes.length <= 25 ? 90 : Math.min(W, H) * 0.20;
-    this.nodes = graph.nodes.map((n, i) => {
+    // Sort clusters deterministically by descending size so core galaxies seed centrally
+    const uniqueClusters = Array.from(clusterTotals.keys()).sort(
+      (a, b) => (clusterTotals.get(b) ?? 0) - (clusterTotals.get(a) ?? 0) || a.localeCompare(b),
+    );
+    const clusterCentroids = new Map<string, { x: number; y: number }>();
+    const numClusters = uniqueClusters.length;
+    const ringRadius = 160 + Math.sqrt(numClusters) * 75;
+
+    // Seed galaxy centroids on a 2D golden-angle phyllotaxis spiral (never a 1D perimeter ring)
+    uniqueClusters.forEach((key, ci) => {
+      if (ci === 0 && uniqueClusters.length === 1) {
+        clusterCentroids.set(key, { x: 0, y: 0 });
+      } else {
+        const cRadius = Math.sqrt(ci + 1) * (ringRadius / Math.max(1, Math.sqrt(numClusters)));
+        const cAngle = ci * 2.399963229728653;
+        clusterCentroids.set(key, {
+          x: Math.cos(cAngle) * cRadius,
+          y: Math.sin(cAngle) * cRadius,
+        });
+      }
+    });
+
+    const clusterMemberCounts = new Map<string, number>();
+
+    // Sort nodes within each cluster so module container / highest-degree hub sits at mIdx = 0 center
+    const sortedInputNodes = [...effectiveGraph.nodes].sort((a, b) => {
+      const rankA = (a.type === "module" ? 1000 : 0) + (deg[a.id] ?? 0);
+      const rankB = (b.type === "module" ? 1000 : 0) + (deg[b.id] ?? 0);
+      return rankB - rankA;
+    });
+
+    this.nodes = sortedInputNodes.map((n) => {
       const p = prevPositions.get(n.id);
-      const angle = (i / Math.max(1, graph.nodes.length)) * Math.PI * 2;
       const d = deg[n.id] ?? 0;
       const scope = scopeOfNode(n);
+      const cKey = nodeClusterKeys.get(n.id) || "root";
+      const cc = clusterCentroids.get(cKey) || { x: 0, y: 0 };
+      const mIdx = clusterMemberCounts.get(cKey) ?? 0;
+      clusterMemberCounts.set(cKey, mIdx + 1);
+
+      // Phyllotaxis golden-angle spiral around cluster centroid (mIdx=0 hub sits at r=0 center)
+      const r = mIdx === 0 ? 0 : 34 * Math.sqrt(mIdx + 1);
+      const th = mIdx * 2.399963229728653;
+
+      const baseR = n.type === "module"
+        ? 9 + Math.min(10, Math.sqrt(n.childCount ?? 4) * 1.2)
+        : n.childCount ? 5 + Math.min(14, Math.sqrt(n.childCount) * 1.3) : 4;
+
       return {
         id: n.id,
         name: n.name,
@@ -285,73 +824,231 @@ export class GraphView {
         owners: n.owners,
         scope,
         deg: d,
-        r: 4 + Math.min(10, Math.sqrt(d) * 2),
-        x: p?.x ?? (Math.cos(angle) * initialR),
-        y: p?.y ?? (Math.sin(angle) * initialR),
+        r: baseR + Math.min(7, Math.sqrt(d) * 1.2),
+        x: p?.x ?? (cc.x + Math.cos(th) * r),
+        y: p?.y ?? (cc.y + Math.sin(th) * r),
+        clusterKey: cKey,
+        isSupportNode: supportNodes.has(n.id),
       };
     });
 
+    // Cache CSS custom properties once before the loop instead of calling getComputedStyle 15,000 times
+    const inkColor = cvar("--ink");
+    const panelColor = cvar("--panel");
+    const defaultEdgeColor = cvar("--edge");
+    const tokenColorCache = new Map<string, string>();
+    const resolveTokenColor = (token: string) => {
+      let cached = tokenColorCache.get(token);
+      if (cached === undefined) {
+        cached = cvar(token);
+        tokenColorCache.set(token, cached);
+      }
+      return cached;
+    };
+
     for (const node of this.nodes) {
       this.nodeMap.set(node.id, node);
-      const color = cvar(colorToken(this.tab, node.type, node.scope));
-      this.graph.addNode(node.id, {
+      const color = (this.tab === "code" && this.aggregateToParent && (node.type === "file" || node.type === "module"))
+        ? galaxyColorOfCluster(node.clusterKey || "root", node.scope)
+        : resolveTokenColor(colorToken(this.tab, node.type, node.scope));
+      nextGraph.addNode(node.id, {
         x: node.x,
         y: node.y,
         size: node.r,
         color,
-        label: node.name,
+        label: node.isSupportNode ? `◈ ${node.name}` : node.name,
         nodeType: node.type,
         scope: node.scope,
+        isSupportNode: node.isSupportNode,
         labelPosition: "below",
         labelSize: 11,
-        labelColor: cvar("--ink"),
-        labelBackgroundColor: cvar("--panel"),
+        labelColor: inkColor,
+        labelBackgroundColor: panelColor,
         labelBackgroundPadding: 2,
       });
     }
 
+    const backboneEdges = effectiveGraph.edges.map((e, idx) => ({
+      key: `${e.source}->${e.target}:${e.relation}:${idx}`,
+      source: e.source,
+      target: e.target,
+      relation: e.relation,
+    }));
+    const backboneSet = extractTreeBackbone(this.nodes, backboneEdges, nodeClusterKeys, supportNodes);
+
     let edgeIdx = 0;
-    for (const e of graph.edges) {
-      if (this.graph.hasNode(e.source) && this.graph.hasNode(e.target)) {
+    for (const e of effectiveGraph.edges) {
+      if (nextGraph.hasNode(e.source) && nextGraph.hasNode(e.target)) {
+        const srcCluster = nodeClusterKeys.get(e.source) ?? "root";
+        const tgtCluster = nodeClusterKeys.get(e.target) ?? "root";
+        const intraCluster = srcCluster === tgtCluster;
+        const heuristicsActive = this.weightTuning?.useHeuristics !== false;
+        const isSupportTarget = heuristicsActive && supportNodes.has(e.target);
+        const weight = computeEdgeLayoutWeight(e.relation, intraCluster, false, this.contractionMode, isSupportTarget, this.weightTuning);
         const key = `${e.source}->${e.target}:${e.relation}:${edgeIdx++}`;
-        this.graph.addEdgeWithKey(key, e.source, e.target, {
+        const isBackbone = backboneSet.has(key);
+        const fam = famOf(e.relation);
+        const isSupportEdge = isSupportTarget && (fam === "dependency" || e.relation === "references");
+        nextGraph.addEdgeWithKey(key, e.source, e.target, {
           relation: e.relation,
           description: e.description,
           confidence: e.confidence,
           transitive: false,
-          size: 1.5,
-          color: cvar("--edge"),
+          size: intraCluster ? 1.6 : 0.9,
+          color: defaultEdgeColor,
+          weight,
+          intraCluster,
+          isBackbone,
+          isSupportEdge,
+          path: "curved",
+          curvature: intraCluster ? 0.16 : 0.22,
+          head: fam === "structure" ? "none" : "arrow",
         });
       }
     }
 
-    // Converge layout instantly via Barnes-Hut ForceAtlas2 without main-thread physics stutter
-    if (this.graph.order > 0) {
+    // Converge layout on the detached graph before attaching to Sigma
+    if (nextGraph.order > 0) {
+      const virtualSprings: string[] = [];
       try {
-        const settings = forceAtlas2.inferSettings(this.graph);
-        const iterations = Math.min(100, Math.max(35, Math.floor(1200 / Math.max(1, this.graph.order))));
-        forceAtlas2.assign(this.graph, {
+        // Inject temporary intra-galaxy cohesion springs
+        let vIdx = 0;
+        const isGranularCode = this.tab === "code" && !this.aggregateToParent;
+        for (const n of this.nodes) {
+          const cKey = n.clusterKey || "root";
+          const hub = clusterHubs.get(cKey);
+          // In granular mode, tether symbols to their parent file and files to the galaxy hub
+          if (isGranularCode && n.type !== "file") {
+            const pid = parentIdOfNode(n);
+            if (pid !== n.id && nextGraph.hasNode(pid)) {
+              const pKey = `__file_spring_${vIdx++}`;
+              nextGraph.addEdgeWithKey(pKey, n.id, pid, {
+                relation: "part_of",
+                transitive: false,
+                size: 0,
+                color: "transparent",
+                weight: 18.0,
+                intraCluster: true,
+              });
+              virtualSprings.push(pKey);
+              continue;
+            }
+          }
+          const nodeDeg = nextGraph.hasNode(n.id) ? nextGraph.degree(n.id) : 0;
+          if (hub && hub.id !== n.id && nextGraph.hasNode(hub.id) && (nodeDeg === 0)) {
+            const vKey = `__galaxy_spring_${vIdx++}`;
+            nextGraph.addEdgeWithKey(vKey, n.id, hub.id, {
+              relation: "part_of",
+              transitive: false,
+              size: 0,
+              color: "transparent",
+              weight: 1.2,
+              intraCluster: true,
+            });
+            virtualSprings.push(vKey);
+          }
+        }
+
+        const settings = forceAtlas2.inferSettings(nextGraph);
+        const iterations = nextGraph.order > 1200
+          ? 20
+          : Math.min(80, Math.max(40, Math.floor(1500 / Math.max(1, nextGraph.order))));
+        forceAtlas2.assign(nextGraph, {
           iterations,
           settings: {
             ...settings,
             barnesHutOptimize: true,
-            gravity: 1.0,
-            scalingRatio: 8,
-            adjustSizes: true,
+            barnesHutTheta: nextGraph.order > 1200 ? 0.9 : 0.75,
+            linLogMode: true,
+            outboundAttractionDistribution: false,
+            adjustSizes: false,
+            edgeWeightInfluence: 1.2,
+            scalingRatio: 5,
+            strongGravityMode: false,
+            gravity: 0.35,
+            slowDown: 4,
           },
         });
       } catch {
-        // Fallback: circular initial positions
+        // Fallback: keep cluster-seeded initial coordinates
+      } finally {
+        for (const vKey of virtualSprings) {
+          if (nextGraph.hasEdge(vKey)) nextGraph.dropEdge(vKey);
+        }
       }
 
       // Synchronize converged coordinates back to this.nodes
-      this.graph.forEachNode((id, attrs) => {
+      nextGraph.forEachNode((id, attrs) => {
         const n = this.nodeMap.get(id);
         if (n) {
           n.x = attrs.x;
           n.y = attrs.y;
         }
       });
+
+      if (this.contractionMode !== "coupled") {
+        const weightedEdges = effectiveGraph.edges.map((e) => {
+          const intra = (nodeClusterKeys.get(e.source) ?? "root") === (nodeClusterKeys.get(e.target) ?? "root");
+          const isSup = (this.weightTuning?.useHeuristics !== false) && supportNodes.has(e.target);
+          return {
+            ...e,
+            weight: computeEdgeLayoutWeight(e.relation, intra, false, this.contractionMode, isSup, this.weightTuning),
+          };
+        });
+        applyCosmosConcentricLayout(this.nodes, weightedEdges, this.contractionMode, this.weightTuning);
+      } else {
+        // Apply vectorized post-convergence collision & galaxy separation so nodes never overlap inside a cluster
+        relaxAndSeparateGalaxiesVectorized(this.nodes, effectiveGraph.edges, nodeClusterKeys, {
+          iterations: 14,
+          intraCompactFactor: 0.92,
+          interExpandFactor: 1.0,
+          minVoidGap: this.weightTuning?.clusterGap ?? 38,
+        });
+      }
+
+      for (const n of this.nodes) {
+        if (nextGraph.hasNode(n.id)) {
+          nextGraph.setNodeAttribute(n.id, "x", n.x);
+          nextGraph.setNodeAttribute(n.id, "y", n.y);
+        }
+      }
+
+      const bundleMap = computeHierarchicalEdgeBundles(
+        this.nodes,
+        effectiveGraph.edges.map((e, idx) => ({
+          key: `${e.source}->${e.target}:${e.relation}:${idx}`,
+          source: e.source,
+          target: e.target,
+          relation: e.relation,
+          intraCluster: (nodeClusterKeys.get(e.source) ?? "root") === (nodeClusterKeys.get(e.target) ?? "root"),
+          isBackbone: backboneSet.has(`${e.source}->${e.target}:${e.relation}:${idx}`),
+        })),
+        nodeClusterKeys,
+      );
+
+      nextGraph.forEachEdge((edgeKey) => {
+        const meta = bundleMap.get(edgeKey);
+        if (meta) {
+          nextGraph.setEdgeAttribute(edgeKey, "curvature", meta.curvature);
+          nextGraph.setEdgeAttribute(edgeKey, "restOpacity", meta.restOpacity);
+          nextGraph.setEdgeAttribute(edgeKey, "restSize", meta.restSize);
+          nextGraph.setEdgeAttribute(edgeKey, "size", meta.restSize);
+        }
+      });
+    }
+
+    // Swap the fully converged graph into Sigma in a single atomic batch!
+    this.graph = nextGraph;
+    if (this.sigma) {
+      this.sigma.setGraph(nextGraph);
+      // Monkeypatch Sigma v4 bug: setGraph() forgets to update dragManager.graph and edgeGroups.graph
+      const sigmaAny = this.sigma as any;
+      if (sigmaAny.internals?.dragManager) {
+        sigmaAny.internals.dragManager.graph = nextGraph;
+      }
+      if (sigmaAny.edgeGroups) {
+        sigmaAny.edgeGroups.graph = nextGraph;
+      }
     }
 
     this.restyle();
@@ -390,8 +1087,8 @@ export class GraphView {
     let opacity = match ? 0.95 : 0.2;
     let highlighted = false;
     let labelSize = 10.5;
-    let labelColor = cvar("--ink");
-    let labelBg = cvar("--panel");
+    let labelColor = this.themeColors.ink;
+    let labelBg = this.themeColors.panel;
     let labelVisibility: "visible" | "auto" | "hidden" = "auto";
 
     const isSelected = Boolean(this.selected && nodeId === this.selected);
@@ -407,7 +1104,7 @@ export class GraphView {
         opacity = 1.0;
         highlighted = true;
         labelSize = 13;
-        labelBg = cvar("--chip");
+        labelBg = this.themeColors.chip;
         labelVisibility = "visible";
       } else if (isSelectedNeighbor) {
         size = data.size + 1.5;
@@ -416,7 +1113,7 @@ export class GraphView {
         labelVisibility = "visible";
       } else {
         opacity = Math.min(opacity, 0.12);
-        labelColor = cvar("--muted");
+        labelColor = this.themeColors.muted;
         labelSize = 10;
         labelVisibility = "hidden";
       }
@@ -426,7 +1123,7 @@ export class GraphView {
         opacity = 1.0;
         highlighted = true;
         labelSize = 13;
-        labelBg = cvar("--chip");
+        labelBg = this.themeColors.chip;
         labelVisibility = "visible";
       } else if (isHoverNeighbor) {
         size = data.size + 1.5;
@@ -436,30 +1133,56 @@ export class GraphView {
       } else if (isSearchHit) {
         labelVisibility = "visible";
         highlighted = true;
-        labelBg = cvar("--chip");
+        labelBg = this.themeColors.chip;
         size = data.size + 2;
       } else {
         opacity = match ? 0.35 : 0.12;
-        labelColor = cvar("--muted");
+        labelColor = this.themeColors.muted;
         labelSize = 10;
         labelVisibility = "hidden";
       }
     } else if (isSearchHit) {
       labelVisibility = "visible";
       highlighted = true;
-      labelBg = cvar("--chip");
+      labelBg = this.themeColors.chip;
       size = data.size + 2;
     } else if (isLandmark) {
       labelVisibility = "visible";
       labelSize = 11;
       opacity = Math.max(opacity, 0.95);
     } else {
-      labelColor = cvar("--muted");
+      labelColor = this.themeColors.muted;
       labelSize = 10.5;
       labelVisibility = "auto";
     }
 
-    const color = cvar(colorToken(this.tab, node.type, node.scope));
+    const isCircletraceReflected = Boolean(this.triStateResult?.circletraceReflectedIds?.has(nodeId));
+    const isCircletracePrimary = Boolean(this.triStateResult?.circletracePrimaryIds?.has(nodeId));
+    const isPinnedLineage = Boolean(this.triStateResult?.pinnedLineageIds?.has(nodeId));
+
+    if (isCircletraceReflected) {
+      size = data.size + 3;
+      opacity = 1.0;
+      highlighted = true;
+      labelSize = 12.5;
+      labelBg = "rgba(251, 191, 36, 0.3)";
+      labelColor = "#fbbf24";
+      labelVisibility = "visible";
+    } else if (isCircletracePrimary) {
+      size = data.size + 2.5;
+      opacity = 1.0;
+      highlighted = true;
+      labelSize = 12;
+      labelVisibility = "visible";
+    } else if (isPinnedLineage) {
+      opacity = Math.max(opacity, 0.95);
+      labelVisibility = "visible";
+    }
+
+    let color = data.color || "#38bdf8";
+    if (isCircletraceReflected) {
+      color = "#fbbf24";
+    }
 
     return {
       ...data,
@@ -469,7 +1192,7 @@ export class GraphView {
       opacity,
       hidden: false,
       highlighted,
-      label: node.name,
+      label: (node.isSupportNode ?? Boolean(data.isSupportNode)) ? `◈ ${node.name}` : node.name,
       labelPosition: "below",
       labelSize,
       labelColor,
@@ -487,22 +1210,37 @@ export class GraphView {
 
     const sourceNode = this.nodeMap.get(source);
     const targetNode = this.nodeMap.get(target);
-    if (!sourceNode || !targetNode) {
-      return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
-    }
+    const fam = famOf(attrs.relation);
+    const isIntra = (attrs.intraCluster !== undefined ? attrs.intraCluster : data.intraCluster) ?? (Boolean(sourceNode && targetNode && sourceNode.clusterKey === targetNode.clusterKey));
+    const isBackbone = Boolean(attrs.isBackbone ?? data.isBackbone);
+    const defaultCurvature = isIntra ? 0.16 : 0.22;
+    const edgeHead = fam === "structure" ? "none" : "arrow";
+
+    const hiddenEdge = {
+      ...data,
+      visibility: "hidden" as const,
+      hidden: true,
+      size: 0,
+      opacity: 0,
+      color: "transparent",
+      path: "curved",
+      curvature: defaultCurvature,
+      head: edgeHead,
+      label: "",
+      labelVisibility: "hidden" as const,
+      forceLabel: false,
+    };
+
+    if (!sourceNode || !targetNode) return hiddenEdge;
 
     const sourceShown = this.isNodeShown(sourceNode);
     const targetShown = this.isNodeShown(targetNode);
-    if (!sourceShown || !targetShown) {
-      return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
-    }
+    if (!sourceShown || !targetShown) return hiddenEdge;
 
     if (attrs.transitive) {
-      if (!this.showTransitive) {
-        return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
-      }
+      if (!this.showTransitive) return hiddenEdge;
     } else if (this.hiddenRels[chipKey(attrs.relation)]) {
-      return { ...data, visibility: "hidden", hidden: true, size: 0, opacity: 0, color: "transparent" };
+      return hiddenEdge;
     }
 
     const q = this.query.toLowerCase();
@@ -516,56 +1254,98 @@ export class GraphView {
       ? (source === activeFocusId ? "out" : target === activeFocusId ? "in" : "far")
       : "none";
 
-    let color = cvar("--edge");
-    let size = 1.6;
-    let opacity = 0.72;
+    const relColor = relationColor(attrs.relation);
+    const neutralEdge = this.themeColors.edge;
+    let color = this.rainbowEdges ? relColor : neutralEdge;
 
-    if (attrs.transitive) {
-      color = cvar("--scope-transitive");
-      opacity = 0.75;
-    } else {
-      const fam = famOf(attrs.relation);
-      if (fam === "structure") {
-        size = 2.4;
-        opacity = 0.45;
-      } else if (fam === "dependency") {
-        size = 1.8;
-        opacity = 0.75;
-      } else if (fam === "contract") {
-        size = 1.8;
-        opacity = 0.75;
-      } else {
-        size = 1.3;
-        opacity = 0.38;
-      }
+    let size = isIntra ? 1.6 : 0.85;
+    let opacity = isIntra ? 0.68 : 0.11;
+
+    if (fam === "structure") {
+      size = isIntra ? 2.2 : 1.1;
+      opacity = isIntra ? 0.58 : 0.16;
+    } else if (fam === "contract") {
+      size = isIntra ? 1.7 : 1.0;
+      opacity = isIntra ? 0.72 : 0.18;
+    } else if (fam === "association") {
+      size = isIntra ? 1.2 : 0.75;
+      opacity = isIntra ? 0.42 : 0.08;
     }
 
-    if (role === "out") {
-      color = cvar("--fil");
-      opacity = 0.95;
-      size += 0.8;
-    } else if (role === "in") {
-      color = cvar("--accent");
-      opacity = 0.95;
-      size += 0.8;
+    const isReflectedSource = Boolean(this.triStateResult?.circletraceReflectedIds?.has(source));
+    const isReflectedTarget = Boolean(this.triStateResult?.circletraceReflectedIds?.has(target));
+    const isReflected = isReflectedSource || isReflectedTarget;
+    const isFocused = role === "out" || role === "in";
+
+    const edgeLabel = isFocused ? (data.relation || attrs.relation || "").replace(/_/g, " ") : "";
+    const labelVisibility = isFocused ? ("visible" as const) : ("hidden" as const);
+    const forceLabel = isFocused;
+
+    let curvature = defaultCurvature;
+
+    if (isFocused || isReflected) {
+      if (isReflected) {
+        color = "#fbbf24";
+      } else if (role === "out") {
+        color = this.rainbowEdges ? relColor : this.themeColors.amber;
+      } else if (role === "in") {
+        color = this.rainbowEdges ? relColor : this.themeColors.accent;
+      }
+      opacity = 1.0;
+      size = Math.max(2.4, size + 1.2);
+      curvature = defaultCurvature;
     } else if (role === "far") {
-      opacity = isHoverActive ? 0.15 : 0.06;
+      opacity = isHoverActive ? 0.06 : 0.03;
+      curvature = defaultCurvature;
     } else if (q && !matchA && !matchB) {
-      opacity = 0.15;
+      opacity = 0.06;
+      curvature = defaultCurvature;
+    } else {
+      // role === "none" (at rest, no node hovered or selected)
+      const isSupportEdge = Boolean(attrs.isSupportEdge ?? data.isSupportEdge);
+      if (isSupportEdge && !isIntra) {
+        // Cross-cluster support edge: hide at rest
+        return hiddenEdge;
+      } else if (isBackbone && isIntra) {
+        // Foreground intra-galaxy branch
+        opacity = 0.68;
+        size = Math.max(1.5, data.size || 1.5);
+        curvature = 0.16;
+      } else if (isBackbone && !isIntra) {
+        // Curated cross-galaxy bridge / bundled highway
+        opacity = data.restOpacity ?? attrs.restOpacity ?? 0.38;
+        size = data.restSize ?? attrs.restSize ?? 1.4;
+        curvature = data.curvature ?? attrs.curvature ?? 0.22;
+      } else if (!isBackbone && !isIntra) {
+        // Non-backbone cross-galaxy mesh chord: hide at rest
+        return hiddenEdge;
+      } else {
+        // !isBackbone && isIntra: faint intra-galaxy chord
+        opacity = 0.08;
+        size = 0.8;
+        curvature = 0.14;
+      }
     }
 
     return {
       ...data,
-      visibility: "visible",
+      visibility: "visible" as const,
       color,
       size,
       opacity,
       hidden: false,
+      path: "curved",
+      curvature: data.curvature ?? curvature,
+      head: edgeHead,
+      label: edgeLabel,
+      labelVisibility,
+      forceLabel,
     };
   }
 
   /** Re-apply all style attributes (theme, filters, focus, search). */
   restyle(): void {
+    this.refreshThemeColors();
     let visCount = 0;
     let maxD = 0;
     const visibleNodes: SimNode[] = [];
@@ -579,19 +1359,44 @@ export class GraphView {
     this.cachedVisibleCount = visCount;
     this.cachedMaxDeg = maxD;
 
-    this.landmarkSet.clear();
-    if (visCount <= 25) {
-      for (const n of visibleNodes) {
-        this.landmarkSet.add(n.id);
-      }
-    } else {
-      const minHubDeg = Math.max(3, Math.min(6, Math.round(maxD * 0.4)));
-      const sortedByDeg = [...visibleNodes]
-        .filter((n) => n.deg >= minHubDeg)
-        .sort((a, b) => b.deg - a.deg);
-      const topCount = Math.min(12, sortedByDeg.length);
-      for (let i = 0; i < topCount; i++) {
-        this.landmarkSet.add(sortedByDeg[i].id);
+    this.landmarkSet = computeGalaxyLandmarks(visibleNodes, 18);
+
+    // Dynamic transitive shortcut edges between visible nodes across hidden intermediaries
+    // Only compute when nodes are actually filtered out (visCount < this.nodes.length) and within interactive bounds
+    const nextSig = `${this.showTransitive}:${visCount}:${visibleNodes.length > 0 ? visibleNodes[0].id : ""}:${visibleNodes.length > 1 ? visibleNodes[visibleNodes.length - 1].id : ""}`;
+    if (nextSig !== this.lastTransitiveSignature) {
+      this.lastTransitiveSignature = nextSig;
+      const edgesToRemove: string[] = [];
+      this.graph.forEachEdge((edgeKey, attrs) => {
+        if (attrs.transitive) edgesToRemove.push(edgeKey);
+      });
+      for (const k of edgesToRemove) this.graph.dropEdge(k);
+
+      if (this.showTransitive && this.rawGraph && visCount < this.nodes.length && this.nodes.length <= 1500) {
+        const isVisible = (id: string) => {
+          const node = this.nodeMap.get(id);
+          return node ? this.isNodeShown(node) : false;
+        };
+
+        const transColor = cvar("--scope-transitive") || "#f97316";
+        const transEdges = generateTransitiveEdges(this.rawGraph.edges, isVisible);
+        let transIdx = 0;
+        for (const te of transEdges) {
+          if (this.graph.hasNode(te.source) && this.graph.hasNode(te.target)) {
+            const key = `transitive:${te.source}->${te.target}:${transIdx++}`;
+            if (!this.graph.hasEdge(key)) {
+              this.graph.addEdgeWithKey(key, te.source, te.target, {
+                relation: "transitive",
+                description: te.description,
+                confidence: "inferred",
+                transitive: true,
+                via: te.via,
+                size: 1.6,
+                color: transColor,
+              });
+            }
+          }
+        }
       }
     }
 
@@ -600,44 +1405,14 @@ export class GraphView {
       this.graph.forEachNeighbor(this.selected, (neighbor) => {
         this.neighbors.add(neighbor);
       });
-    }
-
-    // Dynamic transitive shortcut edges between visible nodes across hidden intermediaries
-    const edgesToRemove: string[] = [];
-    this.graph.forEachEdge((edgeKey, attrs) => {
-      if (attrs.transitive) edgesToRemove.push(edgeKey);
-    });
-    for (const k of edgesToRemove) this.graph.dropEdge(k);
-
-    if (this.showTransitive && this.rawGraph) {
-      const isVisible = (id: string) => {
-        const node = this.nodeMap.get(id);
-        return node ? this.isNodeShown(node) : false;
-      };
-
-      const transEdges = generateTransitiveEdges(this.rawGraph.edges, isVisible);
-      let transIdx = 0;
-      for (const te of transEdges) {
-        if (this.graph.hasNode(te.source) && this.graph.hasNode(te.target)) {
-          const key = `transitive:${te.source}->${te.target}:${transIdx++}`;
-          if (!this.graph.hasEdge(key)) {
-            this.graph.addEdgeWithKey(key, te.source, te.target, {
-              relation: "transitive",
-              description: te.description,
-              confidence: "inferred",
-              transitive: true,
-              via: te.via,
-              size: 1.6,
-              color: cvar("--scope-transitive"),
-            });
-            if (this.selected && te.source === this.selected) this.neighbors.add(te.target);
-            if (this.selected && te.target === this.selected) this.neighbors.add(te.source);
-          }
+      this.graph.forEachEdge(this.selected, (edgeKey, attrs, source, target) => {
+        if (attrs.transitive) {
+          this.neighbors.add(source === this.selected ? target : source);
         }
-      }
+      });
     }
 
-    this.sigma.refresh();
+    this.sigma?.refresh();
     this.drawArchipelago();
   }
 
@@ -649,7 +1424,7 @@ export class GraphView {
 
   /** Center the view on a node and select it (used by search). */
   focus(id: string): void {
-    if (!this.graph.hasNode(id)) return;
+    if (!this.graph.hasNode(id) || !this.sigma) return;
     const attrs = this.graph.getNodeAttributes(id);
     this.select(id);
     const camera = this.sigma.getCamera();
@@ -667,7 +1442,30 @@ export class GraphView {
     }
   }
 
+  /** Focus the highest-degree hub node of a subsystem galaxy cluster. */
+  focusCluster(clusterKey: string): void {
+    let bestHub: SimNode | null = null;
+    for (const n of this.nodes) {
+      if (!this.isNodeShown(n)) continue;
+      const cKey = n.clusterKey || clusterKeyOfNode(n).key;
+      if (cKey === clusterKey) {
+        if (!bestHub || n.deg > bestHub.deg) bestHub = n;
+      }
+    }
+    if (bestHub) {
+      if (this.selected === bestHub.id) {
+        this.select(null);
+        this.resetView();
+      } else {
+        this.focus(bestHub.id);
+      }
+    }
+  }
+
   isNodeShown(n: SimNode): boolean {
+    if (this.triStateResult && !this.triStateResult.visibleIds.has(n.id)) {
+      return false;
+    }
     return (
       !this.hiddenTypes[n.type] &&
       matchNodeFilter(
@@ -683,6 +1481,7 @@ export class GraphView {
   }
 
   zoomBy(factor: number): void {
+    if (!this.sigma) return;
     const camera = this.sigma.getCamera();
     if (factor > 1) {
       camera.zoomIn({ factor });
@@ -692,9 +1491,10 @@ export class GraphView {
   }
 
   resetView(): void {
+    if (!this.sigma || !this.container) return;
     const camera = this.sigma.getCamera();
     const visibleNodes = this.nodes.filter((n) => this.isNodeShown(n));
-    if (visibleNodes.length === 0 || !this.container) {
+    if (visibleNodes.length === 0) {
       camera.reset();
       return;
     }
@@ -750,29 +1550,147 @@ export class GraphView {
 
   reheat(): void {
     if (this.graph.order > 0) {
-      try {
-        const settings = forceAtlas2.inferSettings(this.graph);
-        forceAtlas2.assign(this.graph, {
-          iterations: 35,
-          settings: {
-            ...settings,
-            barnesHutOptimize: true,
-            gravity: 1.0,
-            scalingRatio: 8,
-            adjustSizes: true,
-          },
-        });
-        this.graph.forEachNode((id, attrs) => {
-          const n = this.nodeMap.get(id);
-          if (n) {
-            n.x = attrs.x;
-            n.y = attrs.y;
-          }
-        });
-        this.sigma.refresh();
-        this.drawArchipelago();
-      } catch {}
+      this.sigma?.resize();
+      this.rebounceVisible(true);
+      this.sigma?.refresh();
+      this.drawArchipelago();
     }
+  }
+
+  setShowBlooms(show: boolean): void {
+    this.showBlooms = show;
+    this.drawArchipelago();
+  }
+
+  setRainbowEdges(rainbow: boolean): void {
+    this.rainbowEdges = rainbow;
+    this.sigma.refresh();
+  }
+
+  setAutoRebounce(enabled: boolean): void {
+    this.autoRebounce = enabled;
+    if (enabled) {
+      this.rebounceVisible();
+    }
+  }
+
+  rebounceVisible(animate = true): void {
+    const visibleNodes = this.nodes.filter((n) => this.isNodeShown(n));
+    if (visibleNodes.length <= 1 || this.graph.order === 0) {
+      this.restyle();
+      return;
+    }
+
+    const visibleSet = new Set(visibleNodes.map((n) => n.id));
+    const visibleEdges: Array<{ source: string; target: string; relation?: string; weight?: number }> = [];
+    if (this.rawGraph) {
+      for (const e of this.rawGraph.edges) {
+        if (visibleSet.has(e.source) && visibleSet.has(e.target)) {
+          if (!this.hiddenRels[chipKey(e.relation)]) {
+            const srcNode = this.nodeMap.get(e.source);
+            const tgtNode = this.nodeMap.get(e.target);
+            const srcCluster = srcNode?.clusterKey ?? "root";
+            const tgtCluster = tgtNode?.clusterKey ?? "root";
+            const intra = srcCluster === tgtCluster;
+            const isSupport = this.supportNodes?.has(e.target) ?? false;
+            const w = computeEdgeLayoutWeight(e.relation, intra, false, this.contractionMode, isSupport, this.weightTuning);
+            visibleEdges.push({ ...e, weight: w });
+          }
+        }
+      }
+    }
+
+    const simNodes = visibleNodes.map((n) => ({ ...n }));
+    applyCosmosConcentricLayout(simNodes, visibleEdges, this.contractionMode, this.weightTuning);
+
+    const N = visibleNodes.length;
+
+    if (this.rebounceAnimId !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(this.rebounceAnimId);
+      this.rebounceAnimId = null;
+    }
+
+    if (!animate || typeof requestAnimationFrame === "undefined") {
+      for (let i = 0; i < N; i++) {
+        const n = visibleNodes[i];
+        const sim = simNodes[i];
+        n.x = sim.x;
+        n.y = sim.y;
+        if (this.graph.hasNode(n.id)) {
+          this.graph.setNodeAttribute(n.id, "x", sim.x);
+          this.graph.setNodeAttribute(n.id, "y", sim.y);
+        }
+      }
+      this.restyle();
+      this.sigma?.refresh();
+      this.drawArchipelago();
+      this.resetView();
+      return;
+    }
+
+    const startX = new Float32Array(N);
+    const startY = new Float32Array(N);
+    const targetX = new Float32Array(N);
+    const targetY = new Float32Array(N);
+    const outX = new Float32Array(N);
+    const outY = new Float32Array(N);
+
+    for (let i = 0; i < N; i++) {
+      startX[i] = visibleNodes[i].x;
+      startY[i] = visibleNodes[i].y;
+      targetX[i] = simNodes[i].x;
+      targetY[i] = simNodes[i].y;
+    }
+
+    const totalFrames = 18;
+    let currentFrame = 0;
+
+    const step = () => {
+      currentFrame++;
+      const t = Math.min(1.0, currentFrame / totalFrames);
+      lerpNodePositions(startX, startY, targetX, targetY, outX, outY, N, t);
+
+      for (let i = 0; i < N; i++) {
+        const n = visibleNodes[i];
+        const curX = outX[i];
+        const curY = outY[i];
+        n.x = curX;
+        n.y = curY;
+        if (this.graph.hasNode(n.id)) {
+          this.graph.setNodeAttribute(n.id, "x", curX);
+          this.graph.setNodeAttribute(n.id, "y", curY);
+        }
+      }
+
+      this.sigma?.refresh();
+      this.drawArchipelago();
+
+      if (currentFrame < totalFrames) {
+        this.rebounceAnimId = requestAnimationFrame(step);
+      } else {
+        this.rebounceAnimId = null;
+        this.restyle();
+        this.resetView();
+      }
+    };
+
+    this.rebounceAnimId = requestAnimationFrame(step);
+  }
+
+  setAggregateToParent(aggregate: boolean): void {
+    if (this.aggregateToParent === aggregate) return;
+    this.aggregateToParent = aggregate;
+    if (this.sourceGraph) {
+      this.setData(this.sourceGraph, this.tab);
+    }
+  }
+
+  get currentTab(): "context" | "code" {
+    return this.tab;
+  }
+
+  get currentGraph(): VizGraph | null {
+    return this.rawGraph;
   }
 
   destroy(): void {
@@ -785,7 +1703,7 @@ export class GraphView {
     }
     this.archBadgeCanvas = null;
     this.archBadgeCtx = null;
-    this.sigma.kill();
+    this.sigma?.kill();
     this.graph.clear();
   }
 
@@ -873,7 +1791,20 @@ export class GraphView {
 
   private drawArchipelago(): void {
     const gl = this.archGL;
+    if (!this.showBlooms) {
+      if (gl) {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      if (this.archBadgeCtx && this.archBadgeCanvas) {
+        const w = this.container?.clientWidth || 800;
+        const h = this.container?.clientHeight || 600;
+        this.archBadgeCtx.clearRect(0, 0, w, h);
+      }
+      return;
+    }
     if (!gl || !this.archProgram || !this.container) return;
+    const t0 = typeof performance !== "undefined" ? performance.now() : 0;
     const canvas = gl.canvas as HTMLCanvasElement;
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 600;
@@ -914,45 +1845,50 @@ export class GraphView {
       return;
     }
 
-    // 1. Project visible nodes to screen coordinates
-    const pts = visibleNodes.map((n) => {
-      const vp = this.sigma.graphToViewport({ x: n.x, y: n.y });
-      return {
-        node: n,
-        x: vp.x,
-        y: vp.y,
-        r: n.r,
-        cluster: clusterKeyOfNode(n),
-      };
-    });
-
-    // 2. Adaptive neighborhood distance & target cohesion
-    // Dynamic scaling based on graph size: denser graphs use tighter radius
-    const densityScale = Math.pow(100 / Math.max(20, N), 0.25);
-    const R_nbr = Math.max(50, Math.min(180, 110 * densityScale));
-    const R_nbr_sq = R_nbr * R_nbr;
-    const targetNeighbors = Math.max(2.5, Math.min(10, Math.sqrt(N) * 0.45));
-
-    // 3. Compute continuous neighborhood cohesion per node via 2D spatial grid
-    const cellSize = R_nbr;
-    const grid = new Map<string, number[]>();
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      if (p.x < -200 || p.x > w + 200 || p.y < -200 || p.y > h + 200) {
-        continue;
-      }
-      const cx = Math.floor(p.x / cellSize);
-      const cy = Math.floor(p.y / cellSize);
-      const key = `${cx},${cy}`;
-      const bucket = grid.get(key);
-      if (bucket) {
-        bucket.push(i);
-      } else {
-        grid.set(key, [i]);
-      }
+    // 1. Ensure buffer capacity and project visible nodes to screen coordinates
+    if (N > this.bloomScreenX.length) {
+      const cap = Math.max(256, 1 << Math.ceil(Math.log2(N + 16)));
+      this.bloomScreenX = new Float32Array(cap);
+      this.bloomScreenY = new Float32Array(cap);
+      this.bloomClusterIds = new Int32Array(cap);
+      this.bloomNeighbors = new Int32Array(cap);
+      this.bloomCloseness = new Float32Array(cap);
+      this.bloomInstances = new Float32Array(cap * 8);
     }
 
-    const instances: number[] = [];
+    this.clusterIdMap.clear();
+    let nextClusterId = 0;
+    for (let i = 0; i < N; i++) {
+      const n = visibleNodes[i];
+      const vp = this.sigma.graphToViewport({ x: n.x, y: n.y });
+      this.bloomScreenX[i] = vp.x;
+      this.bloomScreenY[i] = vp.y;
+      const cKey = n.clusterKey || clusterKeyOfNode(n).key;
+      let cId = this.clusterIdMap.get(cKey);
+      if (cId === undefined) {
+        cId = nextClusterId++;
+        this.clusterIdMap.set(cKey, cId);
+      }
+      this.bloomClusterIds[i] = cId;
+    }
+
+    // 2. Adaptive neighborhood distance & target cohesion
+    const densityScale = Math.pow(100 / Math.max(20, N), 0.25);
+    const R_nbr = Math.max(50, Math.min(180, 110 * densityScale));
+    const targetNeighbors = Math.max(2.5, Math.min(10, Math.sqrt(N) * 0.45));
+
+    // 3. Compute continuous neighborhood cohesion via zero-allocation FlatSpatialGrid
+    this.spatialGrid.computeNeighborhoodCohesion(
+      this.bloomScreenX,
+      this.bloomScreenY,
+      this.bloomClusterIds,
+      N,
+      R_nbr,
+      this.bloomNeighbors,
+      this.bloomCloseness,
+    );
+
+    let instanceCount = 0;
     const clusterCentroids = new Map<string, { sumX: number; sumY: number; count: number; name: string; scope: string; totalCohesion: number }>();
 
     const palette = ["#38bdf8", "#818cf8", "#c084fc", "#f472b6", "#34d399", "#fbbf24", "#2dd4bf", "#fb7185"];
@@ -964,50 +1900,22 @@ export class GraphView {
       return palette[hash % palette.length];
     };
 
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
+    for (let i = 0; i < N; i++) {
+      const px = this.bloomScreenX[i];
+      const py = this.bloomScreenY[i];
 
       // Screen bounds culling (with padding for large blooms)
-      if (p.x < -200 || p.x > w + 200 || p.y < -200 || p.y > h + 200) {
+      if (px < -200 || px > w + 200 || py < -200 || py > h + 200) {
         continue;
       }
 
-      const cx = Math.floor(p.x / cellSize);
-      const cy = Math.floor(p.y / cellSize);
-
-      let clusterNeighborCount = 0;
-      let closenessSum = 0;
-
-      for (let ox = -1; ox <= 1; ox++) {
-        for (let oy = -1; oy <= 1; oy++) {
-          const bucket = grid.get(`${cx + ox},${cy + oy}`);
-          if (!bucket) continue;
-          for (let k = 0; k < bucket.length; k++) {
-            const j = bucket[k];
-            if (i === j) continue;
-            const other = pts[j];
-            const dx = other.x - p.x;
-            const dy = other.y - p.y;
-            const distSq = dx * dx + dy * dy;
-            if (distSq > R_nbr_sq) continue;
-
-            const dist = Math.sqrt(distSq);
-            const closeness = 1.0 - dist / R_nbr;
-            const sameCluster = other.cluster.key === p.cluster.key;
-
-            if (sameCluster) {
-              clusterNeighborCount++;
-              closenessSum += closeness * 1.6;
-            } else {
-              closenessSum += closeness * 0.25;
-            }
-          }
-        }
-      }
+      const n = visibleNodes[i];
+      const clusterNeighborCount = this.bloomNeighbors[i];
+      const closenessSum = this.bloomCloseness[i];
 
       // Check focus (hover or selected)
-      const isHovered = Boolean(this.hovered && (p.node.id === this.hovered || this.hoverNeighbors.has(p.node.id)));
-      const isSelected = Boolean(this.selected && (p.node.id === this.selected || this.neighbors.has(p.node.id)));
+      const isHovered = Boolean(this.hovered && (n.id === this.hovered || this.hoverNeighbors.has(n.id)));
+      const isSelected = Boolean(this.selected && (n.id === this.selected || this.neighbors.has(n.id)));
       const isFocus = isHovered || isSelected;
 
       // If lonely node (< 1 cluster neighbor) and not focused, no bloom
@@ -1022,36 +1930,40 @@ export class GraphView {
       }
 
       // Adaptive bloom radius: scales with node radius, cluster neighbor density, and focus
-      const bloomRadius = Math.max(30, (p.r + 28) * densityScale + Math.min(40, clusterNeighborCount * 5) + (isFocus ? 18 : 0));
+      const bloomRadius = Math.max(30, (n.r + 28) * densityScale + Math.min(40, clusterNeighborCount * 5) + (isFocus ? 18 : 0));
 
-      const baseHex = hashColor(p.cluster.key, p.node.scope);
+      const cKey = n.clusterKey || clusterKeyOfNode(n).key;
+      const baseHex = hashColor(cKey, n.scope);
       const alpha = isFocus ? 0.38 : 0.16;
       const [r, g, b, a] = parseColorToRgba(baseHex, alpha);
 
       // Store cluster centroid stats for badge rendering
-      let cc = clusterCentroids.get(p.cluster.key);
+      let cc = clusterCentroids.get(cKey);
       if (!cc) {
-        cc = { sumX: 0, sumY: 0, count: 0, name: p.cluster.name, scope: p.node.scope, totalCohesion: 0 };
-        clusterCentroids.set(p.cluster.key, cc);
+        const cInfo = clusterKeyOfNode(n);
+        cc = { sumX: 0, sumY: 0, count: 0, name: cInfo.name, scope: n.scope, totalCohesion: 0 };
+        clusterCentroids.set(cKey, cc);
       }
-      cc.sumX += p.x;
-      cc.sumY += p.y;
+      cc.sumX += px;
+      cc.sumY += py;
       cc.count += 1;
       cc.totalCohesion += cohesion;
 
       // Layout per instance (8 floats):
       // a_center.x, a_center.y, a_radius, a_color.r, a_color.g, a_color.b, a_color.a, a_cohesion
-      instances.push(
-        p.x * pixelRatio,
-        p.y * pixelRatio,
-        bloomRadius * pixelRatio,
-        r, g, b, a,
-        cohesion,
-      );
+      const offset = instanceCount * 8;
+      this.bloomInstances[offset] = px * pixelRatio;
+      this.bloomInstances[offset + 1] = py * pixelRatio;
+      this.bloomInstances[offset + 2] = bloomRadius * pixelRatio;
+      this.bloomInstances[offset + 3] = r;
+      this.bloomInstances[offset + 4] = g;
+      this.bloomInstances[offset + 5] = b;
+      this.bloomInstances[offset + 6] = a;
+      this.bloomInstances[offset + 7] = cohesion;
+      instanceCount++;
     }
 
     // 4. Render WebGL instanced blooms
-    const instanceCount = instances.length / 8;
     if (instanceCount > 0 && this.archInstanceBuffer) {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -1064,7 +1976,7 @@ export class GraphView {
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-      const data = new Float32Array(instances);
+      const data = this.bloomInstances.subarray(0, instanceCount * 8);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.archInstanceBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
 
@@ -1104,8 +2016,8 @@ export class GraphView {
           const cy = cc.sumY / cc.count;
           const baseColor = hashColor(key, cc.scope);
           const isClusterFocus = Boolean(
-            (this.hovered && pts.some((p) => p.cluster.key === key && (p.node.id === this.hovered || this.hoverNeighbors.has(p.node.id)))) ||
-            (this.selected && pts.some((p) => p.cluster.key === key && (p.node.id === this.selected || this.neighbors.has(p.node.id))))
+            (this.hovered && visibleNodes.some((n) => (n.clusterKey || clusterKeyOfNode(n).key) === key && (n.id === this.hovered || this.hoverNeighbors.has(n.id)))) ||
+            (this.selected && visibleNodes.some((n) => (n.clusterKey || clusterKeyOfNode(n).key) === key && (n.id === this.selected || this.neighbors.has(n.id))))
           );
 
           ctx.font = '600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
@@ -1116,6 +2028,21 @@ export class GraphView {
         }
       }
       ctx.restore();
+    }
+
+    // Adaptive performance budget guard: protect 60fps frame rate
+    if (typeof performance !== "undefined") {
+      const elapsed = performance.now() - t0;
+      if (elapsed > 16.0) {
+        this.bloomSlowFrameCount = (this.bloomSlowFrameCount || 0) + 1;
+        if (this.bloomSlowFrameCount >= 2) {
+          console.warn(`[graft viz] Archipelago bloom draw took ${elapsed.toFixed(1)}ms (>16ms budget). Auto-throttling blooms to preserve 60fps.`);
+          this.setShowBlooms(false);
+          if (this.onBloomsThrottled) this.onBloomsThrottled();
+        }
+      } else {
+        this.bloomSlowFrameCount = 0;
+      }
     }
   }
 }

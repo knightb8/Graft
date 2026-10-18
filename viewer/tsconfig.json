@@ -8,7 +8,9 @@
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "incremental": true,
+    "tsBuildInfoFile": "../dist/.viewer.tsbuildinfo"
   },
   "include": ["./*.ts", "../src/graph/filter.ts", "../src/graph/transitive.ts", "../src/graph/types.ts"]
 }

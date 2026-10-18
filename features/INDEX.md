@@ -16,8 +16,15 @@
 | **parsing** | **core** | 11 | `parsing/core/markdown_ast_support-11.feature` | Markdown AST and Document Structure Extraction |
 | **parsing** | **core** | 12 | `parsing/core/semantic_edges_refinement-12.feature` | Semantic Edge Refinements for Tripartite Architecture |
 | **viz** | **core** | 14 | `viz/core/archipelago_and_lod_labels-14.feature` | Visualizer Archipelago Blooms and Smart LOD Labels |
+| **viz** | **core** | 16 | `viz/core/bloom_rainbow_and_aggregation_toggles-16.feature` | Visualizer Bloom, Rainbow, and Parent Aggregation Toggles |
+| **viz** | **core** | 22 | `viz/core/cosmos_gravity_presets_and_edge_bundling-22.feature` | Tunable Cosmos Gravity Presets, Support Sink Heuristics, and Hierarchical Edge Bundling |
 | **viz** | **core** | 15 | `viz/core/fa2_layout_and_bloom_scaling-15.feature` | Pure ForceAtlas2 Layout and Viewport-Scaled Archipelago Blooms |
+| **viz** | **core** | 17 | `viz/core/galaxy_cluster_layout-17.feature` | Galaxy Cluster Layout and Spiderweb Edge De-Cluttering |
+| **viz** | **core** | 18 | `viz/core/hierarchical_tree_backbone_and_curved_edges-18.feature` | Hierarchical Tree-Backbone Layout and Curved WebGL Edges |
+| **viz** | **core** | 19 | `viz/core/hybrid_miller_sankey_and_tristate_filters-19.feature` | Hybrid Miller-Sankey Explorer and Tri-State Cascading Tree Filters |
+| **viz** | **core** | 21 | `viz/core/interactive_physics_and_visual_parity-21.feature` | Interactive Bouncy Drag Physics and Original Visualizer Parity |
 | **viz** | **core** | 13 | `viz/core/sigma_webgl_migration-13.feature` | Sigma.js WebGL Graph Visualizer |
 | **viz** | **core** | 12 | `viz/core/transitive_edges-12.feature` | Transitive Edge Generation and Edge Visibility |
 | **viz** | **core** | 11 | `viz/core/tree_picker-11.feature` | Left Tree-View Picker Panel in Visualizer |
 | **viz** | **core** | 10 | `viz/core/viz_filter-10.feature` | Scope and Directory Filtering in Visualizer |
+| **viz** | **core** | 20 | `viz/core/wasm_typedarray_galaxy_acceleration-20.feature` | WASM and TypedArray Vectorized Galaxy Physics and Zero-Allocation Rendering |

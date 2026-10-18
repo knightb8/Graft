@@ -3,7 +3,10 @@
  * both directions — amber "Depends on" (outgoing) and teal "Depended on by"
  * (incoming), mirroring the focus-mode edge colors.
  */
-import { type Evidence, type NodeOwner, type VizGraph, colorToken, cvar, scopeOfNode } from "./data.js";
+import {
+  type Evidence, type NodeOwner, type VizGraph,
+  colorToken, cvar, scopeOfNode, clusterKeyOfNode, galaxyColorOfCluster,
+} from "./data.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -101,7 +104,9 @@ export function renderDetail(
     return;
   }
   const nodeScope = scopeOfNode(node);
-  const color = cvar(colorToken(tab, node.type, nodeScope));
+  const color = (tab === "code" && node.childCount !== undefined && node.type === "file")
+    ? galaxyColorOfCluster(clusterKeyOfNode({ id: node.id, sources: node.sources, scope: nodeScope }).key, nodeScope)
+    : cvar(colorToken(tab, node.type, nodeScope));
   const name = (nid: string) => graph.nodes.find((n) => n.id === nid)?.name ?? nid;
   const out = graph.edges.filter((e) => e.source === id);
   const inn = graph.edges.filter((e) => e.target === id);

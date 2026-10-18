@@ -35,3 +35,25 @@ Feature: Pure ForceAtlas2 Layout and Viewport-Scaled Archipelago Blooms
     Then the node position should update immediately on the Graphology graph
     And connected edges should track the dragged position in WebGL
     And no continuous background physics loop should be triggered
+
+  @covers:viewer/graph.ts @covers:test/viz-sigma.test.ts
+  Scenario: 2D galaxy archipelago community formation prevents perimeter ring trapping
+    When thousands of nodes across distinct architectural modules are loaded
+    Then nodes should be initialized using cluster-seeded 2D phyllotaxis coordinates
+    And ForceAtlas2 should apply LinLog logarithmic attraction and hub distribution
+    And nodes should settle into organic 2D archipelagos rather than a hollow perimeter circle
+
+  @covers:viewer/graph.ts @covers:viewer/data.ts @covers:test/viz-sigma.test.ts
+  Scenario: Rainbow-coloured edges mapped by relation taxonomy
+    When edges of various relation types are rendered in the visualizer
+    Then each relation type should receive a distinct canonical rainbow color
+    And the edge legend chips should reflect the relation colors
+    And incoming and outgoing focused edges should preserve high-contrast visibility
+
+  @covers:viewer/graph.ts @covers:test/viz-sigma.test.ts
+  Scenario: Elastic neighborhood rubberbanding on node drag and release
+    When the user drags an individual node on the canvas
+    Then directly connected neighbor nodes should elastically follow with spring rubberbanding
+    And releasing the node should trigger a stepped local relaxation settling the cluster
+
+

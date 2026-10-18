@@ -5,7 +5,8 @@
 import {
   loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT,
   colorToken, cvar, famOf, type VizGraph, type TripartiteScope, type ConcreteScope, matchNodeFilter,
-  scopeOfNode,
+  scopeOfNode, relationColor, clusterKeyOfNode, galaxyColorOfCluster, parentIdOfNode,
+  evaluateTriStateFilter, type EdgeContractionMode, COSMOS_PRESETS, SankeyView,
 } from "./data.js";
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
@@ -13,11 +14,14 @@ import { renderOutline } from "./tree.js";
 import { TreePicker } from "./picker.js";
 
 type Tab = "context" | "code" | "outline";
+type CanvasBase = "galaxy" | "sankey";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const rootEl = document.documentElement;
 
 const state = {
   tab: "context" as Tab,
+  canvasBase: "galaxy" as CanvasBase,
   context: null as VizGraph | null,
   code: null as VizGraph | null,
   outlineOpen: {} as Record<string, boolean>,
@@ -35,6 +39,7 @@ function currentFilter() {
 }
 
 const view = new GraphView(($("graphContainer") || $("graphSvg")) as HTMLElement);
+const sankeyView = new SankeyView($("sankeyContainer"));
 
 const picker = new TreePicker(
   $("pickerTree"),
@@ -46,13 +51,44 @@ const picker = new TreePicker(
   },
 );
 
+function tabSourceGraph(tab: Tab = state.tab): VizGraph | null {
+  return tab === "context" ? state.context : state.code;
+}
+
 function activeGraph(): VizGraph | null {
-  return state.tab === "context" ? state.context : state.code;
+  if (state.tab === "outline") return state.code;
+  if (view.currentGraph && view.currentTab === graphTab()) {
+    return view.currentGraph;
+  }
+  return tabSourceGraph();
 }
 
 function graphTab(): "context" | "code" {
   return state.tab === "code" || state.tab === "outline" ? "code" : "context";
 }
+
+function syncTriStateFilter(): void {
+  const g = activeGraph();
+  const tState = picker.getActiveState();
+  if (g && (tState.activeReducePath || tState.circletracePath || tState.fileStates.size > 0)) {
+    const filterResult = evaluateTriStateFilter({
+      allNodeIds: g.nodes.map((n) => n.id),
+      edges: g.edges,
+      nodeStates: tState.fileStates,
+      activeReduceId: tState.activeReducePath,
+      circletraceId: tState.circletracePath,
+      nodeMap: new Map(g.nodes.map((n) => [n.id, n])),
+    });
+    view.setTriStateFilter(filterResult);
+  } else {
+    view.setTriStateFilter(null);
+  }
+}
+
+picker.onTriStateChange = () => {
+  syncTriStateFilter();
+  applyFilters();
+};
 
 /* ---------- chips: verbs actually present, grouped only where obvious ---------- */
 function renderChips(): void {
@@ -75,10 +111,19 @@ function renderChips(): void {
     btn.className = "echip" + (view.hiddenRels[key] ? "" : " on");
     btn.innerHTML = `${glyphFor(key)} ${key} <span style="opacity:.55">${counts.get(key)}</span>`;
     btn.title = (CHIP_HINT[key] ?? `"${key}" edges`) + " — click to " + (view.hiddenRels[key] ? "show" : "hide");
+    if (!view.hiddenRels[key]) {
+      btn.style.borderColor = (view.rainbowEdges ? relationColor(key) : (cvar("--edge") || "#3b4d54")) + "66";
+    }
     btn.addEventListener("click", () => {
       view.hiddenRels[key] = !view.hiddenRels[key];
       renderChips();
       view.restyle();
+      if (view.autoRebounce) {
+        view.rebounceVisible();
+      }
+      if (state.canvasBase === "sankey") {
+        syncSankeyView(false);
+      }
       updateShownCount();
     });
     host.appendChild(btn);
@@ -87,13 +132,14 @@ function renderChips(): void {
 
 function glyphFor(key: string): string {
   const fam = key === "part of" ? "structure" : key === "uses" ? "dependency" : famOf(key.replace(/ /g, "_"));
+  const color = view.rainbowEdges ? relationColor(key) : (cvar("--edge") || "#71828a");
   const glyphs: Record<string, string> = {
-    structure: '<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="19" y2="4" stroke="currentColor" stroke-width="3" opacity=".5"/></svg>',
-    dependency: '<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.6"/><path d="M14,1 L19,4 L14,7 z" fill="currentColor"/></svg>',
-    contract: '<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" stroke="currentColor" stroke-width="1.4"/><path d="M13,1 L19,4 L13,7 z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
-    association: '<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="19" y2="4" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 4" opacity=".7"/></svg>',
+    structure: `<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="19" y2="4" stroke="${color}" stroke-width="3" opacity=".95"/></svg>`,
+    dependency: `<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="14" y2="4" stroke="${color}" stroke-width="1.8"/><path d="M14,1 L19,4 L14,7 z" fill="${color}"/></svg>`,
+    contract: `<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="13" y2="4" stroke="${color}" stroke-width="1.8"/><path d="M13,1 L19,4 L13,7 z" fill="${color}"/></svg>`,
+    association: `<svg width="20" height="8" aria-hidden="true"><line x1="1" y1="4" x2="19" y2="4" stroke="${color}" stroke-width="1.8" stroke-dasharray="2 3"/></svg>`,
   };
-  return glyphs[fam];
+  return glyphs[fam] ?? glyphs.association;
 }
 
 /* ---------- node-type legend ---------- */
@@ -115,9 +161,45 @@ function renderLegend(): void {
       view.hiddenTypes[type] = !view.hiddenTypes[type];
       renderLegend();
       view.restyle();
+      if (view.autoRebounce) {
+        view.rebounceVisible();
+      }
+      if (state.canvasBase === "sankey") {
+        syncSankeyView(false);
+      }
       updateShownCount();
     });
     host.appendChild(chip);
+  }
+
+  // When parent aggregation is active on the Code tab, also display top subsystem
+  // galaxy chips so the user can map canvas galaxy colors to subsystem directories
+  // and click any chip to focus its galactic nucleus.
+  if (state.tab === "code" && view.aggregateToParent) {
+    const galaxyMap = new Map<string, { count: number; scope: string }>();
+    for (const n of graph.nodes) {
+      if (view.hiddenTypes[n.type] || !matchNodeFilter(n, currentFilter())) continue;
+      const scope = scopeOfNode(n);
+      const cKey = clusterKeyOfNode({ id: n.id, sources: n.sources, scope }).key;
+      const prev = galaxyMap.get(cKey);
+      if (prev) prev.count += 1;
+      else galaxyMap.set(cKey, { count: 1, scope });
+    }
+    const topGalaxies = [...galaxyMap.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
+      .slice(0, 8);
+    for (const [clusterKey, info] of topGalaxies) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "lchip lchip-galaxy";
+      const swColor = galaxyColorOfCluster(clusterKey, info.scope);
+      chip.innerHTML = `<span class="sw" style="background:${swColor}"></span>${clusterKey} <span style="color:var(--muted);font-weight:500">${info.count}</span>`;
+      chip.title = `Subsystem galaxy "${clusterKey}" (${info.count} files) — click to focus hub`;
+      chip.addEventListener("click", () => {
+        view.focusCluster(clusterKey);
+      });
+      host.appendChild(chip);
+    }
   }
 
   // A decoration toggle, not a type filter: it sits after the type chips, carries
@@ -160,17 +242,76 @@ function updateCounts(): void {
 
 /* ---------- detail panel ---------- */
 function showDetail(id: string | null): void {
-  renderDetail($("detail"), state.tab === "context" ? state.context : state.code, graphTab(), id, (next) => {
+  renderDetail($("detail"), activeGraph(), graphTab(), id, (next) => {
     if (state.tab === "outline") {
       showDetail(next);
       renderOutline($("tree"), state.code!, next, state.outlineOpen, showDetail, currentFilter());
+    } else if (state.canvasBase === "sankey") {
+      sankeyView.select(next);
+      showDetail(next);
     } else {
       view.focus(next);
     }
   });
 }
 
-view.onSelect = (id) => showDetail(id);
+view.onSelect = (id) => {
+  sankeyView.selectedId = id;
+  showDetail(id);
+};
+
+sankeyView.onSelect = (id) => {
+  view.selected = id;
+  view.restyle();
+  showDetail(id);
+};
+
+function syncSankeyView(autoCollapse = false): void {
+  const g = activeGraph();
+  if (!g) return;
+  const visibleNodes = g.nodes.filter((n) => !view.hiddenTypes[n.type] && matchNodeFilter(n, currentFilter()) && (!view.triStateResult || view.triStateResult.visibleIds.has(n.id)));
+  const visSet = new Set(visibleNodes.map((n) => n.id));
+  const visibleEdges = g.edges.filter((e) => visSet.has(e.source) && visSet.has(e.target) && !view.hiddenRels[chipKey(e.relation)]);
+  sankeyView.setData(visibleNodes, visibleEdges, autoCollapse);
+}
+
+function setCanvasBase(base: CanvasBase): void {
+  state.canvasBase = base;
+  const isSankey = base === "sankey";
+  const gEl = $("graphContainer");
+  const sEl = $("sankeyContainer");
+  const gBtn = $("baseGalaxyBtn");
+  const sBtn = $("baseSankeyBtn");
+  const galaxyGroup = $("galaxyViewGroup");
+  const zoomCtl = document.querySelector<HTMLElement>(".zoomctl");
+
+  if (gEl) gEl.hidden = isSankey;
+  if (sEl) sEl.hidden = !isSankey;
+  if (galaxyGroup) galaxyGroup.style.display = isSankey ? "none" : "";
+  if (zoomCtl) zoomCtl.style.display = isSankey ? "none" : "";
+
+  if (gBtn) {
+    gBtn.classList.toggle("active", !isSankey);
+    gBtn.style.background = !isSankey ? "var(--accent, #38bdf8)" : "";
+    gBtn.style.color = !isSankey ? "#0b0e11" : "";
+    gBtn.style.fontWeight = !isSankey ? "600" : "";
+  }
+  if (sBtn) {
+    sBtn.classList.toggle("active", isSankey);
+    sBtn.style.background = isSankey ? "var(--accent, #38bdf8)" : "";
+    sBtn.style.color = isSankey ? "#0b0e11" : "";
+    sBtn.style.fontWeight = isSankey ? "600" : "";
+  }
+
+  if (isSankey) {
+    syncSankeyView(true);
+  } else {
+    view.reheat();
+  }
+}
+
+$("baseGalaxyBtn")?.addEventListener("click", () => setCanvasBase("galaxy"));
+$("baseSankeyBtn")?.addEventListener("click", () => setCanvasBase("sankey"));
 
 /* ---------- tabs ---------- */
 function setTab(tab: Tab): void {
@@ -184,6 +325,7 @@ function setTab(tab: Tab): void {
   view.hiddenRels = {};
   view.hiddenTypes = {};
   view.selected = null;
+  sankeyView.selectedId = null;
   showDetail(null);
 
   const empty = $("graphEmpty");
@@ -195,21 +337,18 @@ function setTab(tab: Tab): void {
       showEmpty("No code graph yet — run <code>graft graph</code> to generate <span class=\"mono\">graph.json</span>.");
     }
   } else {
-    const graph = activeGraph();
-    if (!graph || graph.nodes.length === 0) {
-      // A graph that exists but holds no nodes used to fall through to the canvas
-      // and render nothing at all — worst on an exported page, where the reader
-      // arrived from a link that promised a diagram.
-      // The note names changed FILES, and a path on a fork's branch is written by
-      // whoever opened the pull request — it reaches a published page, so it is
-      // escaped rather than trusted.
-      showEmpty(graph?.meta.emptyNote ? escapeText(graph.meta.emptyNote) : (tab === "code"
+    const raw = tabSourceGraph(tab);
+    if (!raw || raw.nodes.length === 0) {
+      showEmpty(raw?.meta.emptyNote ? escapeText(raw.meta.emptyNote) : (tab === "code"
         ? "No code graph yet — run <code>graft graph</code> to generate <span class=\"mono\">graph.json</span>."
         : "No context graph — run <code>graft init</code> first."));
     } else {
       empty.hidden = true;
-      view.setData(graph, graphTab());
-      picker.setGraph(graph);
+      view.setData(raw, graphTab());
+      picker.setGraph(raw);
+      if (state.canvasBase === "sankey") {
+        syncSankeyView(true);
+      }
       if (typeof requestAnimationFrame !== "undefined") {
         requestAnimationFrame(() => {
           view.resetView();
@@ -217,6 +356,9 @@ function setTab(tab: Tab): void {
       }
     }
   }
+
+  const aggChip = $("aggregateChip");
+  if (aggChip) aggChip.style.display = tab === "code" ? "" : "none";
   renderChips();
   renderLegend();
   updateShownCount();
@@ -242,11 +384,22 @@ const search = $("search") as HTMLInputElement;
 search.addEventListener("input", () => {
   view.query = search.value.trim();
   view.restyle();
+  if (state.canvasBase === "sankey") {
+    sankeyView.dirFilterQuery = view.query;
+    sankeyView.render();
+  }
 });
 search.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && view.query) {
     const hit = view.firstMatch();
-    if (hit) view.focus(hit.id);
+    if (hit) {
+      if (state.canvasBase === "sankey") {
+        sankeyView.select(hit.id);
+        showDetail(hit.id);
+      } else {
+        view.focus(hit.id);
+      }
+    }
   }
 });
 
@@ -283,8 +436,15 @@ function setExcluded(raw: string): void {
 }
 
 function applyFilters(): void {
+  syncTriStateFilter();
   view.scopes = state.selectedScopes;
   view.restyle();
+  if (view.autoRebounce) {
+    view.rebounceVisible();
+  }
+  if (state.canvasBase === "sankey") {
+    syncSankeyView(false);
+  }
   renderChips();
   renderLegend();
   updateShownCount();
@@ -307,6 +467,182 @@ transCb?.addEventListener("change", () => {
   const parent = transCb.closest(".scope-chip");
   if (parent) parent.classList.toggle("on", transCb.checked);
   applyFilters();
+});
+
+/* ---------- view controls (aggregate, blooms, rainbow) ---------- */
+const aggregateCb = $("aggregateCb") as HTMLInputElement | null;
+aggregateCb?.addEventListener("change", () => {
+  view.setAggregateToParent(aggregateCb.checked);
+  const parent = aggregateCb.closest(".scope-chip");
+  if (parent) parent.classList.toggle("on", aggregateCb.checked);
+  if (view.selected && aggregateCb.checked) {
+    const graph = activeGraph();
+    if (graph && !graph.nodes.some((n) => n.id === view.selected)) {
+      const pid = parentIdOfNode({ id: view.selected });
+      view.selected = graph.nodes.some((n) => n.id === pid) ? pid : null;
+      view.restyle();
+    }
+  }
+  if (state.canvasBase === "sankey") {
+    syncSankeyView(false);
+  }
+  renderChips();
+  renderLegend();
+  updateShownCount();
+  updateCounts();
+  showDetail(view.selected);
+});
+
+const bloomsCb = $("bloomsCb") as HTMLInputElement | null;
+bloomsCb?.addEventListener("change", () => {
+  view.setShowBlooms(bloomsCb.checked);
+  const parent = bloomsCb.closest(".scope-chip");
+  if (parent) parent.classList.toggle("on", bloomsCb.checked);
+});
+
+view.onBloomsThrottled = () => {
+  if (bloomsCb) bloomsCb.checked = false;
+  const parent = bloomsCb?.closest(".scope-chip");
+  if (parent) {
+    parent.classList.remove("on");
+    parent.setAttribute("title", "Blooms auto-disabled to preserve 60fps render budget (>16ms)");
+  }
+};
+
+const rainbowCb = $("rainbowCb") as HTMLInputElement | null;
+rainbowCb?.addEventListener("change", () => {
+  view.setRainbowEdges(rainbowCb.checked);
+  const parent = rainbowCb.closest(".scope-chip");
+  if (parent) parent.classList.toggle("on", rainbowCb.checked);
+  renderChips();
+});
+
+const rebounceCb = $("rebounceCb") as HTMLInputElement | null;
+rebounceCb?.addEventListener("change", () => {
+  view.setAutoRebounce(rebounceCb.checked);
+  const parent = rebounceCb.closest(".scope-chip");
+  if (parent) parent.classList.toggle("on", rebounceCb.checked);
+});
+
+const contractionToggle = $("contractionToggle") as HTMLButtonElement | null;
+const weightsMenu = $("weightsMenu") as HTMLDivElement | null;
+const closeWeightsMenu = $("closeWeightsMenu") as HTMLButtonElement | null;
+
+const sliderDep = $("sliderDependency") as HTMLInputElement | null;
+const sliderCon = $("sliderContract") as HTMLInputElement | null;
+const sliderAss = $("sliderAssociation") as HTMLInputElement | null;
+const sliderStr = $("sliderStructure") as HTMLInputElement | null;
+const sliderSup = $("sliderSupport") as HTMLInputElement | null;
+const sliderGap = $("sliderClusterGap") as HTMLInputElement | null;
+
+const valDep = $("valDependency");
+const valCon = $("valContract");
+const valAss = $("valAssociation");
+const valStr = $("valStructure");
+const valSup = $("valSupport");
+const valGap = $("valClusterGap");
+
+const toggleHeuristics = $("toggleHeuristics") as HTMLInputElement | null;
+const btnResetWeights = $("btnResetWeights") as HTMLButtonElement | null;
+
+function syncSliderUI() {
+  const tuning = view.weightTuning;
+  if (sliderDep && valDep) { sliderDep.value = String(tuning.dependency); valDep.textContent = String(tuning.dependency); }
+  if (sliderCon && valCon) { sliderCon.value = String(tuning.contract); valCon.textContent = String(tuning.contract); }
+  if (sliderAss && valAss) { sliderAss.value = String(tuning.association); valAss.textContent = String(tuning.association); }
+  if (sliderStr && valStr) { sliderStr.value = String(tuning.structure); valStr.textContent = String(tuning.structure); }
+  if (sliderSup && valSup) { sliderSup.value = String(tuning.supportWeight); valSup.textContent = String(tuning.supportWeight); }
+  if (sliderGap && valGap) { sliderGap.value = String(tuning.clusterGap); valGap.textContent = String(tuning.clusterGap); }
+  if (toggleHeuristics) { toggleHeuristics.checked = tuning.useHeuristics !== false; }
+
+  const modeLabels: Record<EdgeContractionMode, string> = {
+    coupled: "☍ Pull: Coupled ▾",
+    code: "⚙ Pull: Code ▾",
+    spec: "✓ Pull: Spec ▾",
+    doc: "🗎 Pull: Doc ▾",
+    directory: "📁 Pull: Directory ▾",
+  };
+  if (contractionToggle) {
+    contractionToggle.textContent = modeLabels[view.contractionMode] ?? "☍ Pull ▾";
+  }
+
+  document.querySelectorAll<HTMLButtonElement>(".preset-btn").forEach((btn) => {
+    const p = btn.getAttribute("data-cosmos-preset");
+    btn.classList.toggle("active", p === view.contractionMode);
+  });
+}
+
+// Initial sync of button labels and sliders with loaded/default config
+syncSliderUI();
+
+contractionToggle?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (weightsMenu) {
+    weightsMenu.hidden = !weightsMenu.hidden;
+    if (!weightsMenu.hidden) syncSliderUI();
+  }
+});
+
+closeWeightsMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (weightsMenu) weightsMenu.hidden = true;
+});
+
+document.addEventListener("click", (e) => {
+  if (weightsMenu && !weightsMenu.hidden && !weightsMenu.contains(e.target as Node) && e.target !== contractionToggle) {
+    weightsMenu.hidden = true;
+  }
+});
+
+document.querySelectorAll<HTMLButtonElement>(".preset-btn").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const preset = btn.getAttribute("data-cosmos-preset") as EdgeContractionMode;
+    if (preset) {
+      view.setContractionMode(preset);
+      syncSliderUI();
+    }
+  });
+});
+
+sliderDep?.addEventListener("input", () => {
+  const v = parseFloat(sliderDep.value);
+  if (valDep) valDep.textContent = String(v);
+  view.setWeightTuning({ dependency: v });
+});
+sliderCon?.addEventListener("input", () => {
+  const v = parseFloat(sliderCon.value);
+  if (valCon) valCon.textContent = String(v);
+  view.setWeightTuning({ contract: v });
+});
+sliderAss?.addEventListener("input", () => {
+  const v = parseFloat(sliderAss.value);
+  if (valAss) valAss.textContent = String(v);
+  view.setWeightTuning({ association: v });
+});
+sliderStr?.addEventListener("input", () => {
+  const v = parseFloat(sliderStr.value);
+  if (valStr) valStr.textContent = String(v);
+  view.setWeightTuning({ structure: v });
+});
+sliderSup?.addEventListener("input", () => {
+  const v = parseFloat(sliderSup.value);
+  if (valSup) valSup.textContent = String(v);
+  view.setWeightTuning({ supportWeight: v });
+});
+sliderGap?.addEventListener("input", () => {
+  const v = parseInt(sliderGap.value, 10);
+  if (valGap) valGap.textContent = String(v);
+  view.setWeightTuning({ clusterGap: v });
+});
+toggleHeuristics?.addEventListener("change", () => {
+  view.setWeightTuning({ useHeuristics: toggleHeuristics.checked });
+});
+btnResetWeights?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  view.setContractionMode("coupled");
+  view.setWeightTuning({ ...COSMOS_PRESETS.coupled });
+  syncSliderUI();
 });
 
 $("excludeInput")?.addEventListener("input", (ev) => {
@@ -409,7 +745,6 @@ pickerResizer?.addEventListener("pointercancel", endPickerDrag);
 /* ---------- resizable detail panel ---------- */
 const DETAIL_W_KEY = "graft-viz-detail-w";
 const MIN_DETAIL = 220;
-const rootEl = document.documentElement;
 const clampDetail = (px: number): number =>
   Math.min(Math.max(MIN_DETAIL, Math.round(window.innerWidth * 0.6)), Math.max(MIN_DETAIL, Math.round(px)));
 function setDetailWidth(px: number, persist = true): void {

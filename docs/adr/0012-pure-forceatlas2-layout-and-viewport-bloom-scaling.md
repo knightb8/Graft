@@ -17,9 +17,10 @@ Following the visualizer migration to Sigma.js (ADR 0009) and archipelago bloom 
 
 ## Decision Outcome & Rationale
 
-### 1. Pure ForceAtlas2 Barnes-Hut Convergence
+### 1. Pure ForceAtlas2 Barnes-Hut Convergence and Cluster-Seeded Archipelago Initialization
 - Replace `d3-force` simulation with `graphology-layout-forceatlas2`.
-- Run ForceAtlas2 synchronously upon dataset load (`forceAtlas2.assign(this.graph, { iterations: 80, settings: { barnesHutOptimize: true, ... } })`). Barnes-Hut spatial quadtrees converge 3,000 nodes in $\sim 50\text{ ms}$ without blocking or wobbling.
+- **Cluster-Seeded Phyllotaxis Initialization**: Avoid placing unpositioned nodes in a single 1D circle on the perimeter. Symmetrical perimeter rings trap ForceAtlas2 in a hollow circle equilibrium. Instead, seed initial coordinates by grouping nodes into architectural subsystem clusters (`clusterKeyOfNode`), placing cluster centroids across 2D space, and arranging cluster members via golden-ratio phyllotaxis spirals.
+- **LinLog & Hub Dissuasion**: Run ForceAtlas2 with `linLogMode: true` (logarithmic attraction that forms compact community islands) and `outboundAttractionDistribution: true` (hub dissuasion that prevents high-degree hubs from collapsing multiple clusters into one). Barnes-Hut quadtrees converge 3,000 nodes in $\sim 100\text{–}300\text{ ms}$ into distinct 2D archipelagos.
 - Sigma node dragging updates coordinates directly on the Graphology graph (`graph.setNodeAttribute(id, 'x', coords.x)`) without waking up a continuous physics engine.
 
 ### 2. Full-Viewport Canvas Synchronization
@@ -36,11 +37,29 @@ Following the visualizer migration to Sigma.js (ADR 0009) and archipelago bloom 
 ### 4. Decoupling Physics from Blooms
 - Blooms are rendered on camera movements, node selection/hover, window resize, and immediately after layout convergence—never in a high-frequency physics tick loop.
 
+### 5. Fixed Rainbow Edge Color Taxonomy
+- Define a canonical, vibrant rainbow palette mapped directly by relation verb / family:
+  - `part of` (structure): Sky Blue (`#38bdf8`)
+  - `uses` / `calls` / `depends_on`: Golden Amber (`#fbbf24`)
+  - `covers` / `verifies`: Emerald Green (`#10b981`)
+  - `documents`: Royal Purple (`#a855f7`)
+  - `influences`: Hot Rose / Magenta (`#ec4899`)
+  - `extends`: Coral Red (`#f43f5e`)
+  - `implements`: Royal Indigo (`#8b5cf6`)
+  - `transitive`: Bright Tangerine (`#f97316`)
+  - `references`: Slate Blue (`#64748b`)
+- Display matching color swatches on the top-bar edge chips for direct visual synchronization.
+
+### 6. Interactive Elastic Spring Rubberbanding on Drag
+- During `nodeDrag`, compute drag displacement $\Delta \vec{x}, \Delta \vec{y}$.
+- Pull directly connected 1-hop neighbor nodes via an elastic spring force $\vec{x}_{nbr} += \Delta \vec{x} \cdot \gamma$, where $\gamma$ decays smoothly with distance.
+- On `nodeDragEnd`, execute a brief stepped relaxation (10 iterations of ForceAtlas2) to organically settle the cluster around the new position without endless background wobbling.
+
 ## Consequences & Trade-offs
 - **Positive**: 
-  - Graph loads and converges almost instantaneously.
+  - Graph loads and converges almost instantaneously into 2D archipelagos.
   - Zero UI thread freezing or stuttering.
   - Archipelago blooms cover 100% of the viewport seamlessly across any screen resolution and device pixel ratio.
+  - Edges are immediately recognizable by color without reading labels or tooltips.
+  - Interactive tactile rubberbanding is preserved during drag while maintaining static stability when released.
   - Bundle size decreases by eliminating the `d3-force` package from the client viewer.
-- **Negative**:
-  - Dragging a node moves that individual node directly rather than elastic spring-pulling its neighbors (which is preferred in large graphs to avoid unwanted layout destabilization).

@@ -24,7 +24,7 @@ Work strictly follows the **BDD Chem** development cycle, vendored under `bdd_ch
    ```
    features/<domain>/<layer>/<aspect>-<counter>.feature
    ```
-   Write declarative Gherkin — *what*, never *how*. See `bdd_chem/GHERKIN_PATTERNS.md`.
+   Write declarative Gherkin — *what*, never *how* — **unless** enforcing a **Compliance requirement or hard technical constraint** to prevent code-drift. See `bdd_chem/GHERKIN_PATTERNS.md`.
 3. **Red → green → refactor.** Implement step definitions and production code; no unimplemented stubs remain.
 4. **Close** only when every step passes, static analysis is clean, new decisions have ADRs, and the user has explicitly confirmed.
 
