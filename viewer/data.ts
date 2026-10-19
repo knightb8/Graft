@@ -2036,10 +2036,14 @@ export {
 
 export {
   computeBlastAttenuation,
+  evaluateDirectionalBlastStep,
   folderGroupKeyOfNode,
+  type BlastPhase,
+  type BlastTransitionEval,
   type BlastAttenuationNode,
   type BlastAttenuationResult,
 } from "./sankey.js";
+
 
 
 

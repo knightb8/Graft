@@ -2379,6 +2379,69 @@ test("folderGroupKeyOfNode sub-folders flat test suites by domain prefix, Sankey
   sankey.hiddenDirs.add("test/cli");
   sankey.render();
   assert.equal(mockContainer.innerHTML.includes("test/cli"), false, "Hidden directory test/cli must be filtered out of Sankey");
+
+  // 4. Causal Collider Zero-Decay Rules (ADR 0019 / Feature 23)
+  const colliderNodes = [
+    { id: "src/features/moduleA.ts", sources: ["src/features/moduleA.ts"] },
+    { id: "src/features/moduleB.ts", sources: ["src/features/moduleB.ts"] },
+    { id: "src/utils/sharedHelper.ts", sources: ["src/utils/sharedHelper.ts"] },
+    { id: "src/core/engine.ts", sources: ["src/core/engine.ts"] },
+    { id: "src/utils/unrelatedUtil.ts", sources: ["src/utils/unrelatedUtil.ts"] },
+    { id: "test/engine.test.ts", sources: ["test/engine.test.ts"] },
+    { id: "docs/guide.md", sources: ["docs/guide.md"] },
+    { id: "src/other/otherCode.ts", sources: ["src/other/otherCode.ts"] },
+    { id: "docs/conceptZ.md", sources: ["docs/conceptZ.md"] },
+    { id: "docs/conceptW.md", sources: ["docs/conceptW.md"] },
+  ];
+  const colliderEdges = [
+    // Shared utility sink collider: moduleA --uses--> sharedHelper <--uses-- moduleB
+    { source: "src/features/moduleA.ts", target: "src/utils/sharedHelper.ts", relation: "uses" },
+    { source: "src/features/moduleB.ts", target: "src/utils/sharedHelper.ts", relation: "uses" },
+    // Consumer impact vs unrelated prerequisite: moduleA --uses--> engine AND moduleA --uses--> unrelatedUtil
+    { source: "src/features/moduleA.ts", target: "src/core/engine.ts", relation: "uses" },
+    { source: "src/features/moduleA.ts", target: "src/utils/unrelatedUtil.ts", relation: "uses" },
+    // Leaf observer sinks: test/doc/references
+    { source: "test/engine.test.ts", target: "src/core/engine.ts", relation: "verifies" },
+    { source: "docs/guide.md", target: "src/core/engine.ts", relation: "documents" },
+    { source: "docs/guide.md", target: "src/other/otherCode.ts", relation: "documents" },
+    { source: "src/core/engine.ts", target: "docs/conceptZ.md", relation: "references" },
+    { source: "docs/conceptZ.md", target: "docs/conceptW.md", relation: "references" },
+  ];
+
+  // Scenario A: Clicking moduleA reaches sharedHelper (hop 1, DEP_PREREQ), but decays to 0 into moduleB!
+  const fromModuleA = computeBlastAttenuation("src/features/moduleA.ts", colliderNodes, colliderEdges, 0.65);
+  assert.equal(fromModuleA.nodes.get("src/utils/sharedHelper.ts")?.hop, 1);
+  assert.equal(fromModuleA.nodes.get("src/utils/sharedHelper.ts")?.phase, "DEP_PREREQ");
+  assert.equal(
+    fromModuleA.nodes.has("src/features/moduleB.ts"),
+    false,
+    "Shared utility sink collider (moduleA -> sharedHelper <- moduleB) must decay to 0 and never energize moduleB",
+  );
+
+  // Scenario B: Clicking engine.ts propagates reverse consumer impact to moduleA (hop 1, DEP_IMPACT),
+  // but decays to 0 into moduleA's other prerequisite callees (unrelatedUtil, sharedHelper)
+  // and terminates at leaf observers (engine.test.ts, guide.md, conceptZ.md) without leaking into otherCode.ts or conceptW.md!
+  const fromEngine = computeBlastAttenuation("src/core/engine.ts", colliderNodes, colliderEdges, 0.65);
+  assert.equal(fromEngine.nodes.get("src/features/moduleA.ts")?.hop, 1);
+  assert.equal(fromEngine.nodes.get("src/features/moduleA.ts")?.phase, "DEP_IMPACT");
+  assert.equal(
+    fromEngine.nodes.has("src/utils/unrelatedUtil.ts"),
+    false,
+    "Reverse consumer impact (engine <- moduleA) must not leak forward into moduleA's other prerequisite callees",
+  );
+  assert.equal(fromEngine.nodes.get("test/engine.test.ts")?.phase, "LEAF_SINK");
+  assert.equal(fromEngine.nodes.get("docs/guide.md")?.phase, "LEAF_SINK");
+  assert.equal(fromEngine.nodes.get("docs/conceptZ.md")?.phase, "LEAF_SINK");
+  assert.equal(
+    fromEngine.nodes.has("src/other/otherCode.ts"),
+    false,
+    "Leaf documentation observer (engine <- guide.md -> otherCode) must decay to 0 and never bridge unrelated code",
+  );
+  assert.equal(
+    fromEngine.nodes.has("docs/conceptW.md"),
+    false,
+    "Loose references link must terminate at hop 1 (LEAF_SINK) and decay to 0 at hop 2",
+  );
 });
 
 

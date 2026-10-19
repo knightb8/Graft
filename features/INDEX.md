@@ -18,6 +18,7 @@
 | **viz** | **core** | 14 | `viz/core/archipelago_and_lod_labels-14.feature` | Visualizer Archipelago Blooms and Smart LOD Labels |
 | **viz** | **core** | 16 | `viz/core/bloom_rainbow_and_aggregation_toggles-16.feature` | Visualizer Bloom, Rainbow, and Parent Aggregation Toggles |
 | **viz** | **core** | 22 | `viz/core/cosmos_gravity_presets_and_edge_bundling-22.feature` | Tunable Cosmos Gravity Presets, Support Sink Heuristics, and Hierarchical Edge Bundling |
+| **viz** | **core** | 23 | `viz/core/directional_blast_attenuation_and_sankey_subfolders-23.feature` | Directional Blast Attenuation, Causal Collider Zero-Decay Rules, and Sankey Suite Sub-Foldering |
 | **viz** | **core** | 15 | `viz/core/fa2_layout_and_bloom_scaling-15.feature` | Pure ForceAtlas2 Layout and Viewport-Scaled Archipelago Blooms |
 | **viz** | **core** | 17 | `viz/core/galaxy_cluster_layout-17.feature` | Galaxy Cluster Layout and Spiderweb Edge De-Cluttering |
 | **viz** | **core** | 18 | `viz/core/hierarchical_tree_backbone_and_curved_edges-18.feature` | Hierarchical Tree-Backbone Layout and Curved WebGL Edges |

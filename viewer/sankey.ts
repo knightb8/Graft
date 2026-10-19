@@ -425,26 +425,26 @@ export interface SankeyGraph {
 }
 
 /**
- * Hop-Distance & Semantic Relation Effect Attenuation (`computeBlastAttenuation`).
+ * Directional Hop-Distance & Causal Collider Effect Attenuation (`computeBlastAttenuation`, ADR 0019).
  *
- * Calculates how strongly a selected/focused seed artifact energizes downstream
- * and upstream nodes across multiple hops:
- *
- *   Energy(u -> v) = Energy(u) * γ_decay * w_rel(edge) * fanoutPenalty(u)
- *
- * Where:
- * - Hop 0 (Selected Seed): `energy = 1.00`, `hop = 0`
- * - Hop 1 (Direct Neighbor): `energy = w_rel` (`0.85 .. 1.00`)
- * - Hop 2+ (Transitive / Reflected): decays by `decayPerHop` (default `0.65`)
- *   multiplied by semantic relation strength (`implements`/`covers`/`verifies` = `1.0`,
- *   `defines`/`influences`/`documents` = `0.92`, `uses`/`calls` = `0.78`, `references` = `0.55`)
- *   and a gentle hub fan-out penalty `1 / (1 + 0.06 * Math.max(0, deg - 4))` so utility
- *   hubs don't flood the entire graph at 100% energy.
+ * Models multi-hop blast propagation as a directional phase-aware state machine
+ * (`SEED`, `DOWN_REALIZE`, `UP_PROVENANCE`, `DEP_PREREQ`, `DEP_IMPACT`, `LEAF_SINK`)
+ * so causal colliders (`A --uses--> SharedUtil <--uses-- B`, `Caller <--uses-- Core --uses--> Other`,
+ * `Code_1 <- Doc -> Code_2`, `A --references--> B --> C`) decay immediately to `0.0` (blocked).
  */
+export type BlastPhase =
+  | "SEED"
+  | "DOWN_REALIZE"
+  | "UP_PROVENANCE"
+  | "DEP_PREREQ"
+  | "DEP_IMPACT"
+  | "LEAF_SINK";
+
 export interface BlastAttenuationNode {
   id: string;
   hop: number;
   energy: number;
+  phase: BlastPhase;
   role: "seed" | "direct" | "transitive" | "reflected";
 }
 
@@ -453,21 +453,149 @@ export interface BlastAttenuationResult {
   decayPerHop: number;
 }
 
-const RELATION_TRANSMISSION: Record<string, number> = {
-  implements: 1.0,
-  extends: 1.0,
-  covers: 1.0,
-  verifies: 1.0,
-  defines: 0.95,
-  influences: 0.92,
-  documents: 0.9,
-  part_of: 0.88,
-  contains: 0.88,
-  uses: 0.78,
-  calls: 0.78,
-  depends_on: 0.78,
-  references: 0.55,
-};
+export interface BlastTransitionEval {
+  weight: number;
+  nextPhase: BlastPhase;
+}
+
+/**
+ * Evaluates the directional transmission weight `w_dir in [0, 1]` and resulting `BlastPhase`
+ * when stepping across an edge of `relation` in `direction` (`"forward"` = `source -> target`,
+ * `"reverse"` = `target -> source`) from `inPhase`. Returns `weight: 0` when the transition
+ * violates causal directionality (collider / V-structure or leaf sink).
+ */
+export function evaluateDirectionalBlastStep(
+  relation: string | undefined,
+  direction: "forward" | "reverse",
+  inPhase: BlastPhase,
+  includeReflected = false,
+): BlastTransitionEval {
+  if (inPhase === "LEAF_SINK") {
+    return { weight: 0.0, nextPhase: "LEAF_SINK" };
+  }
+
+  const rel = (relation || "uses").toLowerCase();
+
+  // 1. Governance: ADR --influences--> Spec
+  if (rel === "influences") {
+    if (direction === "forward") {
+      if (inPhase === "SEED" || inPhase === "DOWN_REALIZE") {
+        return { weight: 0.95, nextPhase: "DOWN_REALIZE" };
+      }
+      if (includeReflected && inPhase === "UP_PROVENANCE") {
+        return { weight: 0.75, nextPhase: "DOWN_REALIZE" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    } else {
+      // Reverse: Spec -> ADR (Upstream Provenance)
+      if (inPhase === "SEED" || inPhase === "UP_PROVENANCE") {
+        return { weight: 0.92, nextPhase: "UP_PROVENANCE" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    }
+  }
+
+  // 2. Specification Contract: Spec --covers/defines--> Code
+  if (rel === "covers" || rel === "defines") {
+    const w = rel === "covers" ? 1.0 : 0.95;
+    if (direction === "forward") {
+      if (inPhase === "SEED" || inPhase === "DOWN_REALIZE") {
+        return { weight: w, nextPhase: "DOWN_REALIZE" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    } else {
+      // Reverse: Code -> Spec
+      if (inPhase === "SEED" || inPhase === "UP_PROVENANCE" || inPhase === "DEP_IMPACT") {
+        return { weight: 0.95, nextPhase: "UP_PROVENANCE" };
+      }
+      if (includeReflected && inPhase === "DOWN_REALIZE") {
+        return { weight: 0.82, nextPhase: "UP_PROVENANCE" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    }
+  }
+
+  // 3. Type / Interface Realization: Sub --implements/extends--> Super
+  if (rel === "implements" || rel === "extends") {
+    if (direction === "forward") {
+      if (inPhase === "SEED" || inPhase === "UP_PROVENANCE" || inPhase === "DEP_PREREQ") {
+        return { weight: 1.0, nextPhase: "DEP_PREREQ" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    } else {
+      // Reverse: Super -> Sub (who implements this interface)
+      if (inPhase === "SEED" || inPhase === "DOWN_REALIZE" || inPhase === "DEP_IMPACT") {
+        return { weight: 1.0, nextPhase: "DEP_IMPACT" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    }
+  }
+
+  // 4. Verification: Test --verifies--> Code
+  if (rel === "verifies") {
+    if (direction === "forward") {
+      // Test -> Code (Upstream provenance from a Test seed)
+      if (inPhase === "SEED" || inPhase === "UP_PROVENANCE") {
+        return { weight: 1.0, nextPhase: "UP_PROVENANCE" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    } else {
+      // Reverse: Code -> Test (Downstream verification leaf sink)
+      if (inPhase === "SEED" || inPhase === "DOWN_REALIZE" || inPhase === "DEP_IMPACT") {
+        return { weight: 1.0, nextPhase: "LEAF_SINK" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    }
+  }
+
+  // 5. Documentation: Doc --documents--> Target
+  if (rel === "documents") {
+    if (direction === "forward") {
+      // Only allowed directly from a clicked Doc seed (Hop 1); never bridges across code modules!
+      if (inPhase === "SEED") {
+        return { weight: 0.9, nextPhase: "UP_PROVENANCE" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    } else {
+      // Reverse: Target -> Doc (Leaf observer sink; cannot propagate out of Doc!)
+      if (inPhase === "SEED" || inPhase === "DOWN_REALIZE" || inPhase === "DEP_IMPACT") {
+        return { weight: 0.85, nextPhase: "LEAF_SINK" };
+      }
+      return { weight: 0.0, nextPhase: "LEAF_SINK" };
+    }
+  }
+
+  // 6.Loose Reference: A --references--> B (Hop 1 terminal leaf sink only!)
+  if (rel === "references") {
+    if (direction === "forward" && inPhase === "SEED") {
+      return { weight: 0.55, nextPhase: "LEAF_SINK" };
+    }
+    return { weight: 0.0, nextPhase: "LEAF_SINK" };
+  }
+
+  // 7. Structural Containment: part_of / contains
+  if (rel === "part_of" || rel === "contains") {
+    const nextPhase = inPhase === "SEED" ? (direction === "forward" ? "UP_PROVENANCE" : "DOWN_REALIZE") : inPhase;
+    return { weight: 0.88, nextPhase };
+  }
+
+  // 8. Runtime / Module Dependency: Caller --uses/calls/depends_on--> Callee
+  if (direction === "forward") {
+    // Forward: Caller -> Callee (Prerequisite dependency)
+    // Blocked from DEP_IMPACT so `Caller <--uses-- Core` does not spill into `Caller --uses--> UnrelatedUtil`!
+    if (inPhase === "SEED" || inPhase === "DOWN_REALIZE" || inPhase === "DEP_PREREQ") {
+      return { weight: 0.78, nextPhase: "DEP_PREREQ" };
+    }
+    return { weight: 0.0, nextPhase: "LEAF_SINK" };
+  } else {
+    // Reverse: Callee -> Caller (Downstream consumer impact)
+    // Blocked from DEP_PREREQ so `ModuleA --uses--> SharedHelper <--uses-- ModuleB` decays to 0.0!
+    if (inPhase === "SEED" || inPhase === "DEP_IMPACT") {
+      return { weight: 0.88, nextPhase: "DEP_IMPACT" };
+    }
+    return { weight: 0.0, nextPhase: "LEAF_SINK" };
+  }
+}
 
 export function computeBlastAttenuation(
   seedIds: string | Iterable<string>,
@@ -475,6 +603,7 @@ export function computeBlastAttenuation(
   edges: Array<{ source: string; target: string; relation?: string }>,
   decayPerHop = 0.65,
   excludedIds?: Set<string>,
+  includeReflected = false,
 ): BlastAttenuationResult {
   const seeds = typeof seedIds === "string" ? [seedIds] : Array.from(seedIds);
   const result = new Map<string, BlastAttenuationNode>();
@@ -482,72 +611,90 @@ export function computeBlastAttenuation(
     return { nodes: result, decayPerHop };
   }
 
-  const circle = seeds.length === 1
-    ? computeCircletrace(seeds[0], nodes, edges, excludedIds)
-    : null;
+  interface DirectedEdgeStep {
+    neighbor: string;
+    relation: string;
+    direction: "forward" | "reverse";
+  }
 
-  // Build undirected adjacency list with relation transmission weights
-  const adj = new Map<string, Array<{ neighbor: string; relWeight: number }>>();
-  const addEdge = (u: string, v: string, rel?: string) => {
-    const rw = RELATION_TRANSMISSION[rel || "uses"] ?? 0.78;
+  const adj = new Map<string, DirectedEdgeStep[]>();
+  const addStep = (u: string, v: string, relation: string, direction: "forward" | "reverse") => {
     let list = adj.get(u);
     if (!list) {
       list = [];
       adj.set(u, list);
     }
-    list.push({ neighbor: v, relWeight: rw });
+    list.push({ neighbor: v, relation, direction });
   };
 
   for (const e of edges) {
     if (!e.source || !e.target || e.source === e.target) continue;
     if (excludedIds?.has(e.source) || excludedIds?.has(e.target)) continue;
-    addEdge(e.source, e.target, e.relation);
-    addEdge(e.target, e.source, e.relation);
+    const rel = e.relation || "uses";
+    addStep(e.source, e.target, rel, "forward");
+    addStep(e.target, e.source, rel, "reverse");
   }
 
-  // Dijkstra / BFS over hop distance maximizing attenuated energy
-  const queue: Array<{ id: string; hop: number; energy: number }> = [];
+  const queue: Array<{ id: string; hop: number; energy: number; phase: BlastPhase }> = [];
+  const bestStateEnergy = new Map<string, number>();
+
   for (const s of seeds) {
     if (excludedIds?.has(s)) continue;
-    result.set(s, { id: s, hop: 0, energy: 1.0, role: "seed" });
-    queue.push({ id: s, hop: 0, energy: 1.0 });
+    result.set(s, { id: s, hop: 0, energy: 1.0, phase: "SEED", role: "seed" });
+    bestStateEnergy.set(`${s}:SEED`, 1.0);
+    queue.push({ id: s, hop: 0, energy: 1.0, phase: "SEED" });
   }
 
   const maxHops = 4;
   while (queue.length > 0) {
     const curr = queue.shift()!;
-    if (curr.hop >= maxHops) continue;
+    if (curr.hop >= maxHops || curr.phase === "LEAF_SINK") continue;
     const nbrs = adj.get(curr.id);
     if (!nbrs) continue;
 
-    // Gentle fan-out dampening for high-degree utility hubs on hop >= 1
     const deg = nbrs.length;
     const fanoutPenalty = curr.hop === 0 ? 1.0 : 1.0 / (1.0 + 0.05 * Math.max(0, deg - 5));
 
-    for (const { neighbor, relWeight } of nbrs) {
-      const nextHop = curr.hop + 1;
-      // Only include nodes that belong to the canonical lineage / Circletrace set when available
-      if (circle && !circle.primaryIds.has(neighbor) && !circle.reflectedIds.has(neighbor)) {
-        continue;
-      }
+    for (const step of nbrs) {
+      const { weight: relWeight, nextPhase } = evaluateDirectionalBlastStep(
+        step.relation,
+        step.direction,
+        curr.phase,
+        includeReflected,
+      );
 
+      // Causal Collider / Leaf Sink Zero-Decay Rule:
+      if (relWeight <= 0) continue;
+
+      const nextHop = curr.hop + 1;
       const hopDecay = nextHop === 1 ? 1.0 : decayPerHop;
       const rawEnergy = curr.energy * hopDecay * relWeight * fanoutPenalty;
       const nextEnergy = Number(Math.max(0.14, Math.min(1.0, rawEnergy)).toFixed(3));
 
-      const existing = result.get(neighbor);
+      const stateKey = `${step.neighbor}:${nextPhase}`;
+      const prevStateEnergy = bestStateEnergy.get(stateKey) ?? 0;
+      if (nextEnergy > prevStateEnergy) {
+        bestStateEnergy.set(stateKey, nextEnergy);
+        queue.push({ id: step.neighbor, hop: nextHop, energy: nextEnergy, phase: nextPhase });
+      }
+
+      const existing = result.get(step.neighbor);
       if (!existing || nextHop < existing.hop || (nextHop === existing.hop && nextEnergy > existing.energy)) {
-        const isReflected = circle ? circle.reflectedIds.has(neighbor) && !circle.primaryIds.has(neighbor) : false;
         const role: BlastAttenuationNode["role"] =
           nextHop === 0
             ? "seed"
             : nextHop === 1
               ? "direct"
-              : isReflected
+              : curr.phase === "DOWN_REALIZE" && nextPhase === "UP_PROVENANCE"
                 ? "reflected"
                 : "transitive";
-        result.set(neighbor, { id: neighbor, hop: nextHop, energy: nextEnergy, role });
-        queue.push({ id: neighbor, hop: nextHop, energy: nextEnergy });
+        result.set(step.neighbor, {
+          id: step.neighbor,
+          hop: nextHop,
+          energy: nextEnergy,
+          phase: nextPhase,
+          role,
+        });
       }
     }
   }
