@@ -19,7 +19,7 @@ export type McpWrite = ConfigWrite;
 
 /** A planned MCP write, plus the detail needed to actually perform it. */
 export interface McpTarget extends PlannedWrite {
-  format: 'json' | 'toml';
+  format: 'json' | 'toml' | 'toml-array';
   /** JSON only: the top-level key holding the server map. */
   topKey?: string;
   /** JSON only: the server entry to merge in under `graft`. */
@@ -147,6 +147,77 @@ function appendSection(text: string, section: string): string {
   return `${text}${sep}${section}`;
 }
 
+/**
+ * The Vibe MCP list header, as written and as matched. Vibe's `~/.vibe/config.toml`
+ * holds servers as an array of tables — `[[mcp_servers]]` blocks, each named by a
+ * `name = "…"` key — not the keyed `[mcp_servers.<id>]` table Codex uses.
+ */
+const VIBE_HEADER = '[[mcp_servers]]';
+
+/** True when a `[[mcp_servers]]` block body line names graft: `name = "graft"`. */
+function namesGraft(line: string): boolean {
+  const m = line.match(/^\s*name\s*=\s*['"]graft['"]/);
+  return m !== null;
+}
+
+/**
+ * Remove every `[[mcp_servers]]` block whose `name` is graft, returning the rest.
+ *
+ * Line-based for the same reason as {@link stripTomlSection}: a real
+ * parse-and-reserialize would reformat the user's whole config file. A block runs
+ * from its `[[mcp_servers]]` header to the next `[`-header or EOF; only blocks
+ * naming graft are dropped, so foreign servers and every other setting survive
+ * byte for byte. Exported so the writer and `retract.ts` can never disagree about
+ * what "graft's entry" means.
+ */
+export function stripVibeServer(text: string): { rest: string; found: boolean } {
+  const lines = text.split('\n');
+  const kept: string[] = [];
+  let found = false;
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].trim() !== VIBE_HEADER) {
+      kept.push(lines[i]);
+      i++;
+      continue;
+    }
+    // The block runs from its header to the next `[`-header or EOF; only a
+    // block naming graft is dropped, everything else is kept verbatim.
+    let j = i + 1;
+    while (j < lines.length && !lines[j].trimStart().startsWith('[')) j++;
+    if (lines.slice(i + 1, j).some(namesGraft)) found = true;
+    else kept.push(...lines.slice(i, j));
+    i = j;
+  }
+  const rest = kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\n+/, '');
+  return { rest, found };
+}
+
+/**
+ * Register graft's `[[mcp_servers]]` entry in Vibe's `~/.vibe/config.toml`,
+ * replacing whatever a previous version — or a hand-run `vibe mcp add graft` —
+ * left under that name. Strip-and-reappend, the same converging posture as
+ * {@link upsertCodexToml}; foreign servers and settings are untouched either way.
+ */
+function upsertVibeToml(id: string, path: string): McpWrite {
+  const existed = existsSync(path);
+  const text = existed ? readFileSync(path, 'utf8') : '';
+  const { command, args } = serverEntry();
+  const argList = args.map((a) => JSON.stringify(a)).join(', ');
+  const section = `${VIBE_HEADER}\nname = "graft"\ntransport = "stdio"\ncommand = "${command}"\nargs = [${argList}]\n`;
+
+  const { rest, found } = stripVibeServer(text);
+  // Byte-identical already: don't rewrite the file just to reorder it.
+  if (found && text === appendSection(rest, section)) return { id, path, action: 'unchanged' };
+
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, appendSection(rest, section));
+  return { id, path, action: existed ? 'updated' : 'created' };
+}
+
 function jsonTarget(
   hostId: string,
   id: string,
@@ -191,6 +262,18 @@ export function mcpTargets(
       case 'kiro':
         out.push(jsonTarget(id, id, join(repo, '.kiro', 'settings', 'mcp.json'), 'mcpServers', entry));
         break;
+      case 'vibe':
+        // Vibe reads MCP servers from the user-level `~/.vibe/config.toml`
+        // (`[[mcp_servers]]` array of tables, each named by a `name` key) —
+        // global scope: it applies to every project on the machine. Guarded on
+        // the CLI being installed, same as the Codex target above.
+        if (dirExists(join(home, '.vibe'))) {
+          out.push({
+            hostId: id, id: 'vibe', path: join(home, '.vibe', 'config.toml'),
+            scope: 'global', kind: 'mcp', what: '[[mcp_servers]] name="graft"', format: 'toml-array',
+          });
+        }
+        break;
       case 'grok':
         // Grok reads MCP from repo-level `.grok/config.toml` (`[mcp_servers.<name>]`),
         // the same TOML shape Codex uses at ~/.codex/config.toml.
@@ -229,6 +312,8 @@ export function registerMcpConfigs(
     .map((t) =>
       t.format === 'toml'
         ? upsertCodexToml(t.id, t.path)
-        : mergeJsonKey(t.id, t.path, t.topKey!, t.entry!),
+        : t.format === 'toml-array'
+          ? upsertVibeToml(t.id, t.path)
+          : mergeJsonKey(t.id, t.path, t.topKey!, t.entry!),
     );
 }

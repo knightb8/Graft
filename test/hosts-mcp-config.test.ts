@@ -80,6 +80,39 @@ test('grok gets a repo-local TOML MCP section', () => {
   assert.deepEqual(again.map((x) => x.action), ['unchanged']);
 });
 
+test('vibe gets a global [[mcp_servers]] entry, gated on ~/.vibe', () => {
+  const repo = fresh(); const home = fresh();
+  assert.deepEqual(registerMcpConfigs(repo, ['vibe'], { home }), [], 'nothing without ~/.vibe');
+  mkdirSync(join(home, '.vibe'), { recursive: true });
+  const w = registerMcpConfigs(repo, ['vibe'], { home });
+  assert.deepEqual(w.map((x) => x.action), ['created']);
+  assert.equal(w[0].path, join(home, '.vibe', 'config.toml'));
+  const toml = readFileSync(join(home, '.vibe', 'config.toml'), 'utf8');
+  assert.match(toml, /^\[\[mcp_servers\]\]$/m);
+  assert.match(toml, /^name = "graft"$/m);
+  assert.match(toml, /^transport = "stdio"$/m);
+  assert.match(toml, /"@nanonets\/graft"/);
+  const again = registerMcpConfigs(repo, ['vibe'], { home });
+  assert.deepEqual(again.map((x) => x.action), ['unchanged']);
+});
+
+test('vibe: foreign servers and settings survive; a hand-added graft entry converges', () => {
+  const repo = fresh(); const home = fresh();
+  mkdirSync(join(home, '.vibe'), { recursive: true });
+  writeFileSync(join(home, '.vibe', 'config.toml'),
+    'theme = "auto"\n\n[[mcp_servers]]\nname = "linear"\ntransport = "http"\nurl = "https://mcp.linear.app/mcp"\n\n[[mcp_servers]]\nname = "graft"\ntransport = "stdio"\ncommand = "graft"\nargs = [\n    "mcp",\n]\n');
+  const w = registerMcpConfigs(repo, ['vibe'], { home });
+  assert.deepEqual(w.map((x) => x.action), ['updated']);
+  const toml = readFileSync(join(home, '.vibe', 'config.toml'), 'utf8');
+  assert.match(toml, /theme = "auto"/);
+  assert.match(toml, /name = "linear"/, 'foreign server preserved');
+  // exactly one graft entry, in the canonical single-line args shape
+  assert.equal((toml.match(/name = "graft"/g) ?? []).length, 1);
+  assert.match(toml, /^args = \["-y", "@nanonets\/graft", "mcp"\]$/m);
+  const again = registerMcpConfigs(repo, ['vibe'], { home });
+  assert.deepEqual(again.map((x) => x.action), ['unchanged']);
+});
+
 test('JSON with non-object mcpServers value is skipped', () => {
   const repo = fresh(); const home = fresh();
   mkdirSync(join(repo, '.cursor'), { recursive: true });

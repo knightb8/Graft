@@ -121,6 +121,16 @@ export const HOSTS: HostTarget[] = [
     content: windsurfRule,
     detect: (p) => p.dirExists(join(p.home, '.codeium', 'windsurf')) || p.dirExists(join(p.repo, '.windsurf')),
   },
+  {
+    id: 'vibe',
+    name: 'Mistral Vibe',
+    kind: 'section',
+    relPath: 'AGENTS.md',
+    content: instructionBody,
+    // Vibe reads AGENTS.md at the repo root (like the other section hosts) and
+    // keeps MCP servers in the user-level ~/.vibe/config.toml.
+    detect: (p) => p.dirExists(join(p.home, '.vibe')),
+  },
 ];
 
 export function hostIds(): string[] {

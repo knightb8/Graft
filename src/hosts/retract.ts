@@ -28,7 +28,7 @@ import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { HOSTS } from './registry.js';
 import { ALL_MARKERS, type Markers } from './sections.js';
-import { mcpTargets, stripTomlSection } from './mcp-config.js';
+import { mcpTargets, stripTomlSection, stripVibeServer } from './mcp-config.js';
 import { hookTargets } from './codex-hooks.js';
 import { antigravitySkillTargets } from './antigravity.js';
 import { claudeGlobalTargets } from './claude-global.js';
@@ -204,6 +204,22 @@ function removeJsonKey(path: string, topKey: string, apply: boolean): RetractAct
 function removeTomlSection(path: string, apply: boolean): RetractAction {
   if (!existsSync(path)) return 'absent';
   const { rest: kept, found } = stripTomlSection(readFileSync(path, 'utf8'));
+  if (!found) return 'absent';
+  if (!apply) return isBlank(kept) ? 'deleted' : 'removed';
+  if (isBlank(kept)) return removeFile(path, true);
+  writeFileSync(path, kept.endsWith('\n') ? kept : `${kept}\n`);
+  return 'removed';
+}
+
+/**
+ * Delete the `[[mcp_servers]]` block named graft from Vibe's config.toml,
+ * preserving every other server and setting. Line-based for the same reason as
+ * {@link removeTomlSection}; the block shape is exactly what `upsertVibeToml`
+ * in mcp-config.ts appends.
+ */
+function removeVibeServer(path: string, apply: boolean): RetractAction {
+  if (!existsSync(path)) return 'absent';
+  const { rest: kept, found } = stripVibeServer(readFileSync(path, 'utf8'));
   if (!found) return 'absent';
   if (!apply) return isBlank(kept) ? 'deleted' : 'removed';
   if (isBlank(kept)) return removeFile(path, true);
@@ -416,7 +432,12 @@ function targets(repo: string, opts: RetractOpts): Target[] {
     if (opts.global === false && t.scope === 'global') continue;
     add({
       hostId: t.hostId, path: t.path, what: t.what, scope: t.scope,
-      run: (a) => (t.format === 'toml' ? removeTomlSection(t.path, a) : removeJsonKey(t.path, t.topKey!, a)),
+      run: (a) =>
+        t.format === 'toml'
+          ? removeTomlSection(t.path, a)
+          : t.format === 'toml-array'
+            ? removeVibeServer(t.path, a)
+            : removeJsonKey(t.path, t.topKey!, a),
     });
   }
 

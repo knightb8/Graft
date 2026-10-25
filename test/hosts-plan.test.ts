@@ -13,7 +13,7 @@ function fresh(): string { return tmpRepo('plan'); }
 /** A home with every CLI graft can detect installed. */
 function fullHome(): string {
   const home = fresh();
-  for (const d of ['.codex', '.cursor', '.gemini', '.kiro', '.adal', join('.codeium', 'windsurf'), join('.config', 'opencode')]) {
+  for (const d of ['.codex', '.cursor', '.gemini', '.kiro', '.adal', '.vibe', join('.codeium', 'windsurf'), join('.config', 'opencode')]) {
     mkdirSync(join(home, d), { recursive: true });
   }
   return home;
@@ -76,6 +76,19 @@ test('global writes vanish when the CLI is not installed', () => {
   // AGENTS.md is still planned — the instruction file does not depend on ~.
   assert.equal(agents.writes.length, 1);
   assert.match(agents.writes[0].path, /AGENTS\.md$/);
+});
+
+test('vibe: AGENTS.md section in the repo, MCP in ~/.vibe only when installed', () => {
+  const home = fresh(); const repo = fresh();
+  const bare = planInit(repo, { home, ids: ['vibe'] })[0];
+  assert.deepEqual(bare.writes.map((w) => w.kind), ['instruction']);
+  assert.match(toPosixPath(bare.writes[0].path), /AGENTS\.md$/);
+  mkdirSync(join(home, '.vibe'), { recursive: true });
+  const wired = planInit(repo, { home, ids: ['vibe'] })[0];
+  assert.equal(wired.writes.length, 2);
+  const [mcp] = wired.writes.filter((w) => w.kind === 'mcp');
+  assert.equal(mcp.scope, 'global');
+  assert.equal(toPosixPath(mcp.path.slice(home.length)), '/.vibe/config.toml');
 });
 
 test('detected mirrors detectHosts; claude is always available', () => {

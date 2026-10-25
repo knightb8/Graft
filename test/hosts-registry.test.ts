@@ -15,7 +15,7 @@ function probeFor(home: string, repo: string): DetectProbe {
 function fresh(): string { return mkdtempSync(join(tmpdir(), 'graft-registry-')); }
 
 test('registry exposes the known hosts', () => {
-  assert.deepEqual(hostIds().sort(), ['adal', 'agents', 'antigravity', 'copilot', 'cursor', 'gemini', 'grok', 'hermes', 'kiro', 'windsurf']);
+  assert.deepEqual(hostIds().sort(), ['adal', 'agents', 'antigravity', 'copilot', 'cursor', 'gemini', 'grok', 'hermes', 'kiro', 'vibe', 'windsurf']);
   for (const h of HOSTS) {
     assert.ok(h.relPath.length > 0);
     assert.ok(h.content().length > 0);
@@ -77,4 +77,14 @@ test('~/.hermes or AppData/Local/hermes lights up the hermes host', () => {
   const ids = detectHosts(probeFor(home, repo)).map((h) => h.id).sort();
   assert.deepEqual(ids, ['hermes']);
   assert.ok(HOSTS.find((h) => h.id === 'hermes')?.relPath === 'AGENTS.md');
+});
+
+test('~/.vibe lights up the vibe host, which sections into AGENTS.md', () => {
+  const home = fresh(); const repo = fresh();
+  mkdirSync(join(home, '.vibe'));
+  const ids = detectHosts(probeFor(home, repo)).map((h) => h.id).sort();
+  assert.deepEqual(ids, ['vibe']);
+  const vibe = HOSTS.find((h) => h.id === 'vibe');
+  assert.equal(vibe?.kind, 'section');
+  assert.equal(vibe?.relPath, 'AGENTS.md');
 });

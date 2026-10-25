@@ -113,6 +113,29 @@ test('[mcp_servers.graft] is removed and the neighbouring table survives', () =>
   assert.ok(!text.startsWith('\n'), 'no leading blank line left behind');
 });
 
+test('vibe: the graft [[mcp_servers]] entry goes, foreign servers and settings stay', () => {
+  const d = fresh(); const home = fresh();
+  mkdirSync(join(home, '.vibe'), { recursive: true });
+  const cfg = write(home, join('.vibe', 'config.toml'),
+    'theme = "auto"\n\n[[mcp_servers]]\nname = "graft"\ntransport = "stdio"\ncommand = "graft"\nargs = ["mcp"]\n\n[[mcp_servers]]\nname = "linear"\ntransport = "http"\nurl = "https://mcp.linear.app/mcp"\n');
+  const r = byPath(runRetract(d, { apply: true, home, global: true }));
+  assert.equal(r.get(cfg), 'removed');
+  const text = readFileSync(cfg, 'utf8');
+  assert.ok(!text.includes('"graft"'));
+  assert.ok(text.includes('theme = "auto"'));
+  assert.ok(text.includes('name = "linear"'));
+});
+
+test('vibe: a config holding nothing but the graft entry is deleted', () => {
+  const d = fresh(); const home = fresh();
+  mkdirSync(join(home, '.vibe'), { recursive: true });
+  const cfg = write(home, join('.vibe', 'config.toml'),
+    '[[mcp_servers]]\nname = "graft"\ntransport = "stdio"\ncommand = "graft"\nargs = ["mcp"]\n');
+  const r = byPath(runRetract(d, { apply: true, home, global: true }));
+  assert.equal(r.get(cfg), 'deleted');
+  assert.ok(!existsSync(cfg), 'no orphan config left behind');
+});
+
 // --------------------------------------------------------------------------
 // .claude/settings.json — graft's fragments inside a file the user owns
 // --------------------------------------------------------------------------

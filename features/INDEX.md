@@ -5,6 +5,7 @@
 | Domain | Layer | Seq | Feature File | Capability Description |
 | :--- | :--- | :---: | :--- | :--- |
 | **cli** | **core** | 10 | `cli/core/exclude_dir-10.feature` | Exclude Directory CLI Filtering |
+| **cli** | **core** | 11 | `cli/core/host_wiring_mistral_vibe-11.feature` | Mistral Vibe Host Wiring |
 | **graph** | **core** | 13 | `graph/core/graphignore-13.feature` | Persistent File Exclusion via .graphignore |
 | **graph** | **core** | 12 | `graph/core/markdown_ast-12.feature` | Markdown AST Support |
 | **graph** | **core** | 14 | `graph/core/scope_directory_filter-14.feature` | Tripartite Scope and Directory Filtering for Context Graph |
