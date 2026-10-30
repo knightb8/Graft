@@ -1,5 +1,8 @@
 # ADR 0014: Galaxy Cluster Layout, Hub Centripetal Cohesion, and Inter-Cluster Spiderweb De-Cluttering
 
+## Status
+Amended (2026-10-30): Edge weighting tables and ForceAtlas2 post-layout separation heuristics are amended and superseded by ADR 0020 (Unified Relation Registry and Degree-Normalized Edge Weights) and ADR 0021 (Two-Level Stress-SGD Organic Layout with Preset Constraints).
+
 ## Context & Problem Statement
 When viewing medium-to-large codebases (e.g., 372 aggregated file nodes and 1,950 edges on the Code tab) in the Graft WebGL visualizer, the layout previously converged into a single round "distance-pushed spiderweb" rather than distinct, well-separated architectural galaxies (archipelagos):
 

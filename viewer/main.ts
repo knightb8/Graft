@@ -325,7 +325,7 @@ function setTab(tab: Tab): void {
   view.hiddenRels = {};
   view.hiddenTypes = {};
   view.selected = null;
-  sankeyView.selectedId = null;
+  sankeyView.reset();
   showDetail(null);
 
   const empty = $("graphEmpty");

@@ -1,5 +1,8 @@
 # ADR 0018: Tunable Cosmos Gravity Presets, First-Class `defines` Ontology, Support/Utility Sink Dampening, D3-Style Organic Spacing, and Hierarchical Edge Bundling
 
+## Status
+Amended (2026-10-30): Overlapping Cosmos weight tables and heuristic regex support sink detection are consolidated and superseded by ADR 0020 (Unified Relation Registry and Degree-Normalized Edge Weights), and multi-pass ForceAtlas2 relaxation is superseded by ADR 0021 (Two-Level Stress-SGD Organic Layout with Preset Constraints).
+
 ## Context & Problem Statement
 Visualizing a Tripartite Architecture (`Docs/ADRs <-> BDD Specs/Tests <-> Production Code`) requires more than a single static force-directed layout:
 

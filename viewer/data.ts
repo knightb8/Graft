@@ -3,6 +3,45 @@
  * edge semantics (verb → family → form) defined in the design spec.
  */
 import { scopeOfNode } from "../src/graph/filter.js";
+import {
+  RELATIONS,
+  normalizeRelation,
+  normalizedEdgeWeight,
+  normalizedInDegreeWeight,
+  idealEdgeLength,
+  supportScore,
+  famOf as registryFamOf,
+  chipKey as registryChipKey,
+  relationColor as registryRelationColor,
+  RELATION_COLORS as REGISTRY_RELATION_COLORS,
+  SEMANTIC_RELATION_WEIGHTS as REGISTRY_SEMANTIC_RELATION_WEIGHTS,
+  COSMOS_RELATION_WEIGHTS as REGISTRY_COSMOS_RELATION_WEIGHTS,
+  EDGE_CONTRACTION_WEIGHTS as REGISTRY_EDGE_CONTRACTION_WEIGHTS,
+  SUPPORT_CLASS_EDGE_WEIGHT as REGISTRY_SUPPORT_CLASS_EDGE_WEIGHT,
+  type Family,
+  type CanonicalRelation,
+  type RelationDefinition,
+  type RelationLayoutConfig,
+  type RelationRenderConfig,
+  type DirectionalBlastRules,
+  type EdgeContractionProfile,
+} from "./relations.js";
+
+export {
+  RELATIONS,
+  normalizeRelation,
+  normalizedEdgeWeight,
+  normalizedInDegreeWeight,
+  idealEdgeLength,
+  supportScore,
+  type Family,
+  type CanonicalRelation,
+  type RelationDefinition,
+  type RelationLayoutConfig,
+  type RelationRenderConfig,
+  type DirectionalBlastRules,
+  type EdgeContractionProfile,
+};
 export {
   type TripartiteScope,
   type ConcreteScope,
@@ -91,30 +130,13 @@ export interface VizGraph {
   edges: VizEdge[];
 }
 
-/** Every relation verb belongs to one family; form follows family. */
-export type Family = "structure" | "dependency" | "contract" | "association";
-
-const FAMILY: Record<string, Family> = {
-  part_of: "structure", contains: "structure",
-  uses: "dependency", depends_on: "dependency", calls: "dependency", imports: "dependency",
-  produces: "dependency", configures: "dependency", validates: "dependency",
-  extends: "contract", implements: "contract", influences: "contract", covers: "contract", verifies: "contract", binds: "contract", transitive: "contract", defines: "contract",
-  references: "association", documents: "association",
-};
-
-export function famOf(rel: string): Family {
-  return FAMILY[rel] ?? "association";
-}
+export const famOf = registryFamOf;
 
 /** Force-spring rest length per family: hierarchy pulls tight. */
 export const REST: Record<Family, number> = { structure: 85, dependency: 145, contract: 150, association: 185 };
 
 /** Chip grouping: "part of" and "uses" are clear as groups; other verbs stand alone. */
-export function chipKey(rel: string): string {
-  if (famOf(rel) === "structure") return "part of";
-  if (rel === "calls" || rel === "uses" || rel === "depends_on" || rel === "imports") return "uses";
-  return rel.replace(/_/g, " ");
-}
+export const chipKey = registryChipKey;
 
 /** Hover hint: the question the verb answers for someone building or reviewing code. */
 export const CHIP_HINT: Record<string, string> = {
@@ -135,49 +157,10 @@ export const CHIP_HINT: Record<string, string> = {
   "references": "mentioned but never called — possible dead coupling",
 };
 
-/** Canonical rainbow color palette per relation type/verb. */
-export const RELATION_COLORS: Record<string, string> = {
-  // Structure (contains, part of): Electric Sky Blue
-  "part of": "#38bdf8",
-  part_of: "#38bdf8",
-  contains: "#38bdf8",
+/** Canonical rainbow color palette per relation type/verb delegated to registry. */
+export const RELATION_COLORS: Record<string, string> = REGISTRY_RELATION_COLORS;
 
-  // Dependency & calls: Golden Amber
-  uses: "#fbbf24",
-  calls: "#fbbf24",
-  depends_on: "#fbbf24",
-  imports: "#f59e0b",
-  produces: "#f97316",
-  configures: "#fb923c",
-  validates: "#34d399",
-
-  // Contracts & test coverage: Emerald Green & Vivid Purple
-  covers: "#10b981",
-  verifies: "#10b981",
-  binds: "#059669",
-  defines: "#c084fc",
-
-  // Documentation: Royal Violet / Purple
-  documents: "#a855f7",
-
-  // Architecture influence: Hot Rose / Magenta
-  influences: "#ec4899",
-
-  // Inheritance & interfaces: Coral Red & Royal Indigo
-  extends: "#f43f5e",
-  implements: "#8b5cf6",
-
-  // Inferred shortcuts: Bright Tangerine
-  transitive: "#f97316",
-
-  // References: Soft Slate Blue
-  references: "#64748b",
-};
-
-export function relationColor(rel: string): string {
-  const key = chipKey(rel);
-  return RELATION_COLORS[key] ?? RELATION_COLORS[rel] ?? "#71828a";
-}
+export const relationColor = registryRelationColor;
 
 /** Node-type → CSS custom property, per tab. */
 // `changed` / `affected` come from `graft blast --export-viz`, where the graph is a
@@ -605,128 +588,22 @@ export const COSMOS_PRESETS: Record<EdgeContractionMode, CosmosWeightTuning> = {
   directory: { structure: 2.8, dependency: 1.0, contract: 1.1, association: 1.0, supportWeight: 0.15, clusterGap: 55, useHeuristics: true },
 };
 
-export const SEMANTIC_RELATION_WEIGHTS: Record<string, { intra: number; inter: number }> = {
-  implements: { intra: 3.0, inter: 2.6 },
-  extends: { intra: 3.0, inter: 2.6 },
-  defines: { intra: 2.8, inter: 2.2 },
-  covers: { intra: 2.5, inter: 2.2 },
-  verifies: { intra: 2.5, inter: 2.2 },
-  documents: { intra: 2.0, inter: 1.8 },
-  influences: { intra: 2.0, inter: 1.8 },
-  part_of: { intra: 1.4, inter: 0.5 },
-  contains: { intra: 1.4, inter: 0.5 },
-  uses: { intra: 1.8, inter: 0.6 },
-  calls: { intra: 1.8, inter: 0.6 },
-  depends_on: { intra: 1.8, inter: 0.6 },
-  references: { intra: 0.45, inter: 0.25 },
-};
-export const SUPPORT_CLASS_EDGE_WEIGHT = 0.15;
+export const SEMANTIC_RELATION_WEIGHTS: Record<string, { intra: number; inter: number }> = REGISTRY_SEMANTIC_RELATION_WEIGHTS;
+export const SUPPORT_CLASS_EDGE_WEIGHT = REGISTRY_SUPPORT_CLASS_EDGE_WEIGHT;
+export const COSMOS_RELATION_WEIGHTS: Partial<Record<EdgeContractionMode, Record<string, { intra: number; inter: number }>>> = REGISTRY_COSMOS_RELATION_WEIGHTS;
+export const EDGE_CONTRACTION_WEIGHTS: Record<EdgeContractionMode, EdgeContractionProfile> = REGISTRY_EDGE_CONTRACTION_WEIGHTS;
 
-export const COSMOS_RELATION_WEIGHTS: Partial<Record<EdgeContractionMode, Record<string, { intra: number; inter: number }>>> = {
-  code: {
-    implements: { intra: 3.4, inter: 2.8 },
-    extends: { intra: 3.4, inter: 2.8 },
-    uses: { intra: 2.6, inter: 1.4 },
-    calls: { intra: 2.6, inter: 1.4 },
-    depends_on: { intra: 2.6, inter: 1.4 },
-    defines: { intra: 2.6, inter: 2.0 },
-    part_of: { intra: 1.8, inter: 0.7 },
-    contains: { intra: 1.8, inter: 0.7 },
-    covers: { intra: 0.9, inter: 0.75 },
-    verifies: { intra: 0.9, inter: 0.75 },
-    documents: { intra: 0.7, inter: 0.55 },
-    influences: { intra: 0.7, inter: 0.55 },
-    references: { intra: 0.3, inter: 0.15 },
-  },
-  spec: {
-    covers: { intra: 3.6, inter: 3.2 },
-    verifies: { intra: 3.6, inter: 3.2 },
-    defines: { intra: 3.2, inter: 2.8 },
-    implements: { intra: 2.4, inter: 2.0 },
-    extends: { intra: 2.4, inter: 2.0 },
-    influences: { intra: 2.4, inter: 2.1 },
-    documents: { intra: 2.4, inter: 2.1 },
-    part_of: { intra: 1.1, inter: 0.4 },
-    contains: { intra: 1.1, inter: 0.4 },
-    uses: { intra: 0.9, inter: 0.35 },
-    calls: { intra: 0.9, inter: 0.35 },
-    depends_on: { intra: 0.9, inter: 0.35 },
-    references: { intra: 0.45, inter: 0.3 },
-  },
-  doc: {
-    documents: { intra: 3.6, inter: 3.3 },
-    influences: { intra: 3.6, inter: 3.3 },
-    defines: { intra: 3.0, inter: 2.6 },
-    references: { intra: 1.8, inter: 1.4 },
-    covers: { intra: 2.0, inter: 1.7 },
-    verifies: { intra: 2.0, inter: 1.7 },
-    implements: { intra: 1.5, inter: 1.1 },
-    extends: { intra: 1.5, inter: 1.1 },
-    part_of: { intra: 1.0, inter: 0.4 },
-    contains: { intra: 1.0, inter: 0.4 },
-    uses: { intra: 0.75, inter: 0.25 },
-    calls: { intra: 0.75, inter: 0.25 },
-    depends_on: { intra: 0.75, inter: 0.25 },
-  },
-};
-
-export interface EdgeContractionProfile {
-  structure: number;
-  dependency: number;
-  contract: number;
-  association: number;
-  intraClusterMultiplier: number;
-  interClusterMultiplier: number;
-  transitiveScale: number;
+/**
+ * Computes degree-normalized edge layout attraction using cosine degree normalization.
+ */
+export function computeDegreeNormalizedEdgeWeight(
+  relation: string,
+  degU: number,
+  degV: number,
+  mode: EdgeContractionMode = "coupled",
+): number {
+  return normalizedEdgeWeight(relation, degU, degV, mode);
 }
-
-export const EDGE_CONTRACTION_WEIGHTS: Record<EdgeContractionMode, EdgeContractionProfile> = {
-  coupled: {
-    structure: 0.9,
-    dependency: 1.6,
-    contract: 2.4,
-    association: 2.1,
-    intraClusterMultiplier: 1.8,
-    interClusterMultiplier: 0.85,
-    transitiveScale: 0.45,
-  },
-  code: {
-    structure: 1.8,
-    dependency: 3.0,
-    contract: 0.85,
-    association: 0.65,
-    intraClusterMultiplier: 1.8,
-    interClusterMultiplier: 0.85,
-    transitiveScale: 0.45,
-  },
-  spec: {
-    structure: 1.1,
-    dependency: 0.8,
-    contract: 3.5,
-    association: 2.2,
-    intraClusterMultiplier: 1.8,
-    interClusterMultiplier: 0.85,
-    transitiveScale: 0.45,
-  },
-  doc: {
-    structure: 1.0,
-    dependency: 0.65,
-    contract: 1.85,
-    association: 3.5,
-    intraClusterMultiplier: 1.8,
-    interClusterMultiplier: 0.85,
-    transitiveScale: 0.45,
-  },
-  directory: {
-    structure: 2.8,
-    dependency: 1.0,
-    contract: 1.1,
-    association: 1.0,
-    intraClusterMultiplier: 3.5,
-    interClusterMultiplier: 0.25,
-    transitiveScale: 0.35,
-  },
-};
 
 /**
  * Computes ForceAtlas2 layout attraction weight for an edge based on relation family,
@@ -1030,14 +907,21 @@ export function seedClusteredPositions<T extends { id: string; x?: number; y?: n
 
 const UTILITY_NAME_RE = /(?:^|[\/_.-])(helpers?|utils?|utilities|types?|common|shared|constants?|schemas?|config|errors?)(?:[\/_.-]|\.[a-z0-9]+$|$)/i;
 
+export interface DetectSupportNodesOptions {
+  useRegexHeuristics?: boolean;
+  degreeThreshold?: number;
+  useDegreeNormalization?: boolean;
+}
+
 /**
  * Detects support / utility sink nodes (helpers, types, utils, cross-cluster sinks)
- * using topological fan-in and lexical utility indicators.
+ * using topological fan-in, degree metrics, and optional lexical utility indicators.
  */
 export function detectSupportNodes(
   nodes: Array<{ id: string; name?: string; type?: string; sources?: string[]; clusterKey?: string }>,
   edges: Array<{ source: string; target: string; relation: string }>,
   clusterKeyMap?: Map<string, string>,
+  options?: DetectSupportNodesOptions,
 ): Set<string> {
   const supportSet = new Set<string>();
   const nodeMap = new Map<string, { id: string; name?: string; type?: string; sources?: string[]; clusterKey?: string }>();
@@ -1079,6 +963,8 @@ export function detectSupportNodes(
     }
   }
 
+  const useRegex = options?.useRegexHeuristics !== false;
+
   for (const n of nodes) {
     const inDeg = inDegMap.get(n.id) ?? 0;
     const outDeg = outDegMap.get(n.id) ?? 0;
@@ -1097,7 +983,10 @@ export function detectSupportNodes(
     // 2. Lexical/Structural Utility Sink: isLexicalUtility && inDeg >= 2 && inDeg / (outDeg + 1) >= 1.5
     const isLexicalSink = isLexicalUtility && inDeg >= 2 && inDeg / (outDeg + 1) >= 1.5;
 
-    if (isTopological || isLexicalSink) {
+    // 3. Optional degree-based threshold alternative
+    const isDegreeSink = typeof options?.degreeThreshold === "number" && inDeg >= options.degreeThreshold && inDeg / (outDeg + 1) >= 1.5;
+
+    if (isTopological || isDegreeSink || (useRegex && isLexicalSink)) {
       supportSet.add(n.id);
     }
   }

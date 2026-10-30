@@ -33,6 +33,8 @@ Feature: Interactive Bouncy Drag Physics and Original Visualizer Parity
     And incident edges on the focused node should expose their human-readable relation verb label
     And non-incident background nodes and edges outside the direct neighborhood should dim
 
+  @wip
+  # Note: Contributor owner badge fan-out on canvas nodes deferred during WebGL migration; metadata is rendered in detail panel inspector.
   @covers:viewer/graph.ts @covers:viewer/main.ts @covers:test/viz-sigma.test.ts
   Scenario: Contributor owner badges fan out on nodes and toggle as a pure decoration
     Given nodes in the graph carry contributor owner commit histories

@@ -1,5 +1,8 @@
 # ADR 0016: Hybrid Miller-Sankey Traceability Explorer, Tri-State Cascading Tree Filters, and Circletrace Set Algebra
 
+## Status
+Amended (2026-10-30): Stacked Flow column expansion, click/double-click handling, contiguous sibling ordering, and ribbon crossing minimization are amended and refined by ADR 0022 (Hierarchical Drill-Down and Crossing-Minimized Ordering in Stacked Flow Columns).
+
 ## Context & Problem Statement
 While the 2D WebGL galaxy/tree visualizer (ADRs 0013–0015) excels at spatial neighborhood discovery, architectural governance and traceability workflows require structured multi-stage lineage analysis across the software lifecycle:
 - **Forward Traceability (Intent $\to$ Implementation)**: Which Features implement `ADR-0014`, which Code modules implement those Features, which Tests verify them, and which Docs explain them? Are there dead-end gaps (e.g., untested or undocumented code)?

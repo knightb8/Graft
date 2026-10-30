@@ -17,6 +17,7 @@ import Sigma, { DEFAULT_STYLES } from "sigma";
 import { pathCurved, pathLine, pathLoop, extremityArrow } from "sigma/rendering";
 import { MultiDirectedGraph } from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
+import { twoLevelLayout } from "./layout/two-level.js";
 import {
   type VizGraph, type NodeOwner, type TripartiteScope, type ConcreteScope,
   type EdgeContractionMode, type CosmosWeightTuning, type EdgeBundleMeta,
@@ -160,6 +161,7 @@ export class GraphView {
   landmarkSet = new Set<string>();
   triStateResult: TriStateFilterResult | null = null;
   public autoRebounce = true;
+  public layoutEngine: "stress" | "legacy" = "stress";
   public contractionMode: EdgeContractionMode = "coupled";
   public weightTuning: CosmosWeightTuning = { ...COSMOS_PRESETS.coupled };
   public supportNodes: Set<string> = new Set<string>();
@@ -186,7 +188,37 @@ export class GraphView {
   private dragAnimId: number | null = null;
   private lastDraggedNode: string | null = null;
 
-  private loadPersistedCosmosConfig(): { mode?: EdgeContractionMode; tuning?: Partial<CosmosWeightTuning> } | null {
+  setLayoutEngine(engine: "stress" | "legacy"): void {
+    this.layoutEngine = engine;
+    this.persistCosmosConfig();
+    if (this.autoRebounce) {
+      this.rebounceVisible();
+    }
+  }
+
+  onNodeDragMove(nodeId: string, x: number, y: number): void {
+    this.draggedNode = nodeId;
+    if (!this.dragSimulator || this.dragSimulator.pinnedIdx === -1) {
+      this.initDragSimulation(nodeId, { x, y });
+    } else {
+      this.dragSimulator.posX[this.dragSimulator.pinnedIdx] = x;
+      this.dragSimulator.posY[this.dragSimulator.pinnedIdx] = y;
+    }
+    this.stepDragVerlet(0.25);
+  }
+
+  onNodeDragEnd(): void {
+    this.draggedNode = null;
+    if (this.dragSimulator) {
+      this.dragSimulator = null;
+    }
+  }
+
+  private loadPersistedCosmosConfig(): {
+    mode?: EdgeContractionMode;
+    tuning?: Partial<CosmosWeightTuning>;
+    layoutEngine?: "stress" | "legacy";
+  } | null {
     if (typeof localStorage === "undefined") return null;
     try {
       const raw = localStorage.getItem("graft.cosmosConfig");
@@ -203,6 +235,7 @@ export class GraphView {
       localStorage.setItem("graft.cosmosConfig", JSON.stringify({
         mode: this.contractionMode,
         tuning: this.weightTuning,
+        layoutEngine: this.layoutEngine,
       }));
     } catch {
       // ignore
@@ -526,6 +559,9 @@ export class GraphView {
       }
       const basePreset = COSMOS_PRESETS[this.contractionMode] ?? COSMOS_PRESETS.coupled;
       this.weightTuning = { ...basePreset, ...(saved.tuning ?? {}) };
+      if (saved.layoutEngine === "stress" || saved.layoutEngine === "legacy") {
+        this.layoutEngine = saved.layoutEngine;
+      }
     }
 
     this.graph = new MultiDirectedGraph<NodeAttrs, EdgeAttrs>();
@@ -909,101 +945,116 @@ export class GraphView {
 
     // Converge layout on the detached graph before attaching to Sigma
     if (nextGraph.order > 0) {
-      const virtualSprings: string[] = [];
-      try {
-        // Inject temporary intra-galaxy cohesion springs
-        let vIdx = 0;
-        const isGranularCode = this.tab === "code" && !this.aggregateToParent;
+      if (this.layoutEngine === "stress") {
+        const result = twoLevelLayout(this.nodes, effectiveGraph.edges, {
+          mode: this.contractionMode as any,
+          minGap: this.weightTuning?.clusterGap ?? 24,
+          clusterKeyMap: nodeClusterKeys,
+        });
         for (const n of this.nodes) {
-          const cKey = n.clusterKey || "root";
-          const hub = clusterHubs.get(cKey);
-          // In granular mode, tether symbols to their parent file and files to the galaxy hub
-          if (isGranularCode && n.type !== "file") {
-            const pid = parentIdOfNode(n);
-            if (pid !== n.id && nextGraph.hasNode(pid)) {
-              const pKey = `__file_spring_${vIdx++}`;
-              nextGraph.addEdgeWithKey(pKey, n.id, pid, {
+          const pos = result.positions.get(n.id);
+          if (pos) {
+            n.x = pos.x;
+            n.y = pos.y;
+          }
+        }
+      } else {
+        const virtualSprings: string[] = [];
+        try {
+          // Inject temporary intra-galaxy cohesion springs
+          let vIdx = 0;
+          const isGranularCode = this.tab === "code" && !this.aggregateToParent;
+          for (const n of this.nodes) {
+            const cKey = n.clusterKey || "root";
+            const hub = clusterHubs.get(cKey);
+            // In granular mode, tether symbols to their parent file and files to the galaxy hub
+            if (isGranularCode && n.type !== "file") {
+              const pid = parentIdOfNode(n);
+              if (pid !== n.id && nextGraph.hasNode(pid)) {
+                const pKey = `__file_spring_${vIdx++}`;
+                nextGraph.addEdgeWithKey(pKey, n.id, pid, {
+                  relation: "part_of",
+                  transitive: false,
+                  size: 0,
+                  color: "transparent",
+                  weight: 18.0,
+                  intraCluster: true,
+                });
+                virtualSprings.push(pKey);
+                continue;
+              }
+            }
+            const nodeDeg = nextGraph.hasNode(n.id) ? nextGraph.degree(n.id) : 0;
+            if (hub && hub.id !== n.id && nextGraph.hasNode(hub.id) && (nodeDeg === 0)) {
+              const vKey = `__galaxy_spring_${vIdx++}`;
+              nextGraph.addEdgeWithKey(vKey, n.id, hub.id, {
                 relation: "part_of",
                 transitive: false,
                 size: 0,
                 color: "transparent",
-                weight: 18.0,
+                weight: 1.2,
                 intraCluster: true,
               });
-              virtualSprings.push(pKey);
-              continue;
+              virtualSprings.push(vKey);
             }
           }
-          const nodeDeg = nextGraph.hasNode(n.id) ? nextGraph.degree(n.id) : 0;
-          if (hub && hub.id !== n.id && nextGraph.hasNode(hub.id) && (nodeDeg === 0)) {
-            const vKey = `__galaxy_spring_${vIdx++}`;
-            nextGraph.addEdgeWithKey(vKey, n.id, hub.id, {
-              relation: "part_of",
-              transitive: false,
-              size: 0,
-              color: "transparent",
-              weight: 1.2,
-              intraCluster: true,
-            });
-            virtualSprings.push(vKey);
+
+          const settings = forceAtlas2.inferSettings(nextGraph);
+          const iterations = nextGraph.order > 1200
+            ? 20
+            : Math.min(80, Math.max(40, Math.floor(1500 / Math.max(1, nextGraph.order))));
+          forceAtlas2.assign(nextGraph, {
+            iterations,
+            settings: {
+              ...settings,
+              barnesHutOptimize: true,
+              barnesHutTheta: nextGraph.order > 1200 ? 0.9 : 0.75,
+              linLogMode: true,
+              outboundAttractionDistribution: false,
+              adjustSizes: false,
+              edgeWeightInfluence: 1.2,
+              scalingRatio: 5,
+              strongGravityMode: false,
+              gravity: 0.35,
+              slowDown: 4,
+            },
+          });
+        } catch {
+          // Fallback: keep cluster-seeded initial coordinates
+        } finally {
+          for (const vKey of virtualSprings) {
+            if (nextGraph.hasEdge(vKey)) nextGraph.dropEdge(vKey);
           }
         }
 
-        const settings = forceAtlas2.inferSettings(nextGraph);
-        const iterations = nextGraph.order > 1200
-          ? 20
-          : Math.min(80, Math.max(40, Math.floor(1500 / Math.max(1, nextGraph.order))));
-        forceAtlas2.assign(nextGraph, {
-          iterations,
-          settings: {
-            ...settings,
-            barnesHutOptimize: true,
-            barnesHutTheta: nextGraph.order > 1200 ? 0.9 : 0.75,
-            linLogMode: true,
-            outboundAttractionDistribution: false,
-            adjustSizes: false,
-            edgeWeightInfluence: 1.2,
-            scalingRatio: 5,
-            strongGravityMode: false,
-            gravity: 0.35,
-            slowDown: 4,
-          },
+        // Synchronize converged coordinates back to this.nodes
+        nextGraph.forEachNode((id, attrs) => {
+          const n = this.nodeMap.get(id);
+          if (n) {
+            n.x = attrs.x;
+            n.y = attrs.y;
+          }
         });
-      } catch {
-        // Fallback: keep cluster-seeded initial coordinates
-      } finally {
-        for (const vKey of virtualSprings) {
-          if (nextGraph.hasEdge(vKey)) nextGraph.dropEdge(vKey);
-        }
-      }
 
-      // Synchronize converged coordinates back to this.nodes
-      nextGraph.forEachNode((id, attrs) => {
-        const n = this.nodeMap.get(id);
-        if (n) {
-          n.x = attrs.x;
-          n.y = attrs.y;
+        if (this.contractionMode !== "coupled") {
+          const weightedEdges = effectiveGraph.edges.map((e) => {
+            const intra = (nodeClusterKeys.get(e.source) ?? "root") === (nodeClusterKeys.get(e.target) ?? "root");
+            const isSup = (this.weightTuning?.useHeuristics !== false) && supportNodes.has(e.target);
+            return {
+              ...e,
+              weight: computeEdgeLayoutWeight(e.relation, intra, false, this.contractionMode, isSup, this.weightTuning),
+            };
+          });
+          applyCosmosConcentricLayout(this.nodes, weightedEdges, this.contractionMode, this.weightTuning);
+        } else {
+          // Apply vectorized post-convergence collision & galaxy separation so nodes never overlap inside a cluster
+          relaxAndSeparateGalaxiesVectorized(this.nodes, effectiveGraph.edges, nodeClusterKeys, {
+            iterations: 14,
+            intraCompactFactor: 0.92,
+            interExpandFactor: 1.0,
+            minVoidGap: this.weightTuning?.clusterGap ?? 38,
+          });
         }
-      });
-
-      if (this.contractionMode !== "coupled") {
-        const weightedEdges = effectiveGraph.edges.map((e) => {
-          const intra = (nodeClusterKeys.get(e.source) ?? "root") === (nodeClusterKeys.get(e.target) ?? "root");
-          const isSup = (this.weightTuning?.useHeuristics !== false) && supportNodes.has(e.target);
-          return {
-            ...e,
-            weight: computeEdgeLayoutWeight(e.relation, intra, false, this.contractionMode, isSup, this.weightTuning),
-          };
-        });
-        applyCosmosConcentricLayout(this.nodes, weightedEdges, this.contractionMode, this.weightTuning);
-      } else {
-        // Apply vectorized post-convergence collision & galaxy separation so nodes never overlap inside a cluster
-        relaxAndSeparateGalaxiesVectorized(this.nodes, effectiveGraph.edges, nodeClusterKeys, {
-          iterations: 14,
-          intraCompactFactor: 0.92,
-          interExpandFactor: 1.0,
-          minVoidGap: this.weightTuning?.clusterGap ?? 38,
-        });
       }
 
       for (const n of this.nodes) {
@@ -1601,7 +1652,26 @@ export class GraphView {
     }
 
     const simNodes = visibleNodes.map((n) => ({ ...n }));
-    applyCosmosConcentricLayout(simNodes, visibleEdges, this.contractionMode, this.weightTuning);
+    if (this.layoutEngine === "stress") {
+      const nodeClusterMap = new Map<string, string>();
+      for (const n of visibleNodes) {
+        nodeClusterMap.set(n.id, n.clusterKey ?? "root");
+      }
+      const result = twoLevelLayout(simNodes, visibleEdges, {
+        mode: this.contractionMode as any,
+        minGap: this.weightTuning?.clusterGap ?? 24,
+        clusterKeyMap: nodeClusterMap,
+      });
+      for (const sn of simNodes) {
+        const pos = result.positions.get(sn.id);
+        if (pos) {
+          sn.x = pos.x;
+          sn.y = pos.y;
+        }
+      }
+    } else {
+      applyCosmosConcentricLayout(simNodes, visibleEdges, this.contractionMode, this.weightTuning);
+    }
 
     const N = visibleNodes.length;
 

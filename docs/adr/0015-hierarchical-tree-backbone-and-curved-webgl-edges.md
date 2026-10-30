@@ -1,5 +1,8 @@
 # ADR 0015: Hierarchical Tree-Backbone Layout, Rest-Length Branching, and Curved WebGL Edges
 
+## Status
+Amended (2026-10-30): Semantic relation weight hierarchy tables and rest-length relaxation passes are superseded and consolidated by ADR 0020 (Unified Relation Registry and Degree-Normalized Edge Weights) and ADR 0021 (Two-Level Stress-SGD Organic Layout with Preset Constraints).
+
 ## Context & Problem Statement
 Even after grouping files into separated subsystem islands (ADR 0014), the WebGL visualizer exhibits a geometric "crisscross" mesh appearance compared to the organic, branching "tree-like" aesthetic of the original visualizer. Root-cause comparison against `upstream/main` identifies four structural and rendering causes:
 

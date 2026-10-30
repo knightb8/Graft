@@ -24,8 +24,11 @@
 | **viz** | **core** | 18 | `viz/core/hierarchical_tree_backbone_and_curved_edges-18.feature` | Hierarchical Tree-Backbone Layout and Curved WebGL Edges |
 | **viz** | **core** | 19 | `viz/core/hybrid_miller_sankey_and_tristate_filters-19.feature` | Hybrid Miller-Sankey Explorer and Tri-State Cascading Tree Filters |
 | **viz** | **core** | 21 | `viz/core/interactive_physics_and_visual_parity-21.feature` | Interactive Bouncy Drag Physics and Original Visualizer Parity |
+| **viz** | **core** | 24 | `viz/core/relation_registry_and_degree_normalization-24.feature` | Unified Relation Registry and Degree-Normalized Edge Weights |
 | **viz** | **core** | 13 | `viz/core/sigma_webgl_migration-13.feature` | Sigma.js WebGL Graph Visualizer |
+| **viz** | **core** | 26 | `viz/core/stacked_flow_hierarchical_drilldown-26.feature` | Hierarchical Drill-Down and Crossing-Minimized Ordering in Stacked Flow Columns |
 | **viz** | **core** | 12 | `viz/core/transitive_edges-12.feature` | Transitive Edge Generation and Edge Visibility |
 | **viz** | **core** | 11 | `viz/core/tree_picker-11.feature` | Left Tree-View Picker Panel in Visualizer |
+| **viz** | **core** | 25 | `viz/core/two_level_stress_layout_and_preset_constraints-25.feature` | Two-Level Stress-SGD Organic Layout with Preset Constraints |
 | **viz** | **core** | 10 | `viz/core/viz_filter-10.feature` | Scope and Directory Filtering in Visualizer |
 | **viz** | **core** | 20 | `viz/core/wasm_typedarray_galaxy_acceleration-20.feature` | WASM and TypedArray Vectorized Galaxy Physics and Zero-Allocation Rendering |
