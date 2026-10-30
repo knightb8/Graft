@@ -8,7 +8,10 @@ import { once } from 'node:events';
 import { buildGraph } from '../src/graph/build.js';
 
 async function rpc(messages: object[], dir: string, expected: number): Promise<any[]> {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'mcp', dir], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'mcp', dir], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, HOME: dir },
+  });
   const responses: any[] = [];
   let buf = '';
   child.stdout.on('data', (d) => {

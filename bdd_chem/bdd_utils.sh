@@ -43,10 +43,30 @@ case "$COMMAND" in
 
         if [ $ERROR -eq 0 ]; then
             echo "✅ All BDD files pass the layout convention rules!"
+            
+            # Advisory Tripartite Connectivity Check (if Graft auditor is present)
+            if command -v node >/dev/null 2>&1 && [ -f "scripts/audit-tripartite.mjs" ]; then
+                echo ""
+                echo "🔗 Tripartite Health Check (ADRs ↔ Specs ↔ Code):"
+                node scripts/audit-tripartite.mjs --summary "$FEATURES_DIR" "docs/adr"
+                echo "💡 Run './bdd_utils.sh audit' or './bdd_utils.sh check-links' for full report."
+            fi
             exit 0
         else
             echo "❌ Linting failed."
             exit 1
+        fi
+        ;;
+        
+    audit|check-links|tripartite)
+        if command -v node >/dev/null 2>&1 && [ -f "scripts/audit-tripartite.mjs" ]; then
+            node scripts/audit-tripartite.mjs "$FEATURES_DIR" "${3:-docs/adr}" "${@:4}"
+        else
+            echo "🔍 Running fallback bash tripartite scanner on $FEATURES_DIR..."
+            echo "--- Disconnected Features (missing @adr:) ---"
+            find "$FEATURES_DIR" -name "*.feature" -exec grep -L "@adr:" {} +
+            echo "--- Disconnected Features (missing @covers:) ---"
+            find "$FEATURES_DIR" -name "*.feature" -exec grep -L "@covers:" {} +
         fi
         ;;
         
@@ -91,7 +111,8 @@ case "$COMMAND" in
     *)
         echo "BDD Toolkit Utilities"
         echo "Usage:"
-        echo "  $0 lint  [directory]              - Validates nested structure and naming conventions."
+        echo "  $0 lint  [directory]              - Validates nested structure, naming conventions, and tripartite health."
+        echo "  $0 audit [directory] [adr_dir]    - Audits semantic links between ADRs, Features, and Code/Tests."
         echo "  $0 index [directory] [output_file] - Generates a Markdown feature index table."
         echo ""
         echo "If output_file is omitted, index prints to stdout."
@@ -99,7 +120,7 @@ case "$COMMAND" in
         echo ""
         echo "Examples:"
         echo "  $0 lint ./features"
-        echo "  $0 index ./features"
+        echo "  $0 audit ./features ./docs/adr"
         echo "  $0 index ./features ./features/INDEX.md"
         ;;
 esac

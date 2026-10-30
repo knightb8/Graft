@@ -1,4 +1,8 @@
+@core @adr:docs/adr/0005-graphignore-file-support.md
+@covers:src/util/graphignore.ts @covers:src/graph/source-files.ts @covers:src/ingest/fs.ts
+@covers:test/graphignore.test.ts @covers:test/graph-graphignore-e2e.test.ts
 Feature: Persistent File Exclusion via .graphignore
+  Governed by [ADR 0005: Persistent File Exclusion via .graphignore](docs/adr/0005-graphignore-file-support.md)
 
   As a Graft user
   I want to specify ignore patterns in a .graphignore file at the root of my repository
