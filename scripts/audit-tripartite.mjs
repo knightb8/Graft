@@ -2,8 +2,8 @@
  * Tripartite Audit: Verifies semantic connections between ADRs, Features, Code, and Tests.
  *
  * Checks:
- * 1. Disconnected ADRs: Architectural Decision Records without any governing BDD Feature.
- * 2. Unanchored Features: BDD Features missing `@adr:<path>` or markdown `[ADR](<path>)` link.
+ * 1. Disconnected ADRs: Architectural decisions without any specifying/realizing BDD Feature.
+ * 2. Unanchored Features: BDD Features missing a governing ADR (@adr:<path> or [ADR](<path>)).
  * 3. Uncovered Features: BDD Features missing `@covers:<path>` implementation or test link.
  * 4. Broken References: `@adr:` or `@covers:` tags pointing to non-existent files.
  * 5. Unreferenced Tests: Test files not covered by any feature and not importing source files.
@@ -184,7 +184,7 @@ console.log(`       GRAFT TRIPARTITE CONNECTIVITY AUDIT (ADRs ↔ Specs ↔ Code
 console.log(`======================================================================\n`);
 
 console.log(`📊 Health Summary:`);
-console.log(`  • ADR Governance Coverage:    ${connectedAdrs} / ${totalAdrs} ADRs connected (${adrCoveragePct}%)`);
+console.log(`  • ADR Realization Coverage:   ${connectedAdrs} / ${totalAdrs} ADRs specified by features (${adrCoveragePct}%)`);
 console.log(`  • Feature Tripartite Health:  ${fullyLinkedFeatures} / ${totalFeatures} features fully linked (${featHealthPct}%)`);
 console.log(`  • Test Verification Links:    ${testFiles.length - unreferencedTests.length} / ${testFiles.length} tests covered`);
 
@@ -196,14 +196,14 @@ if (brokenRefs.length > 0) {
 }
 
 if (disconnectedAdrs.length > 0) {
-  console.log(`\n🟣 Disconnected ADRs (missing governing .feature) (${disconnectedAdrs.length}):`);
+  console.log(`\n🟣 Disconnected ADRs (unrealized / missing specifying .feature) (${disconnectedAdrs.length}):`);
   for (const adr of disconnectedAdrs) {
     console.log(`  • ${adr}`);
   }
 }
 
 if (unanchoredFeatures.length > 0) {
-  console.log(`\n🔴 Disconnected Features (missing @adr:<path>) (${unanchoredFeatures.length}):`);
+  console.log(`\n🔴 Unanchored Features (missing governing ADR / @adr:<path>) (${unanchoredFeatures.length}):`);
   for (const f of unanchoredFeatures) {
     console.log(`  • ${f}`);
   }
