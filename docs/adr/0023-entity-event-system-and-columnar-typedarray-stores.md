@@ -61,6 +61,7 @@ Each frame processes state through sequential cache-friendly batch loops:
 
 ## References & Tripartite Traceability
 - **Governing Technical Specification**: [docs/devdocs/entity-event-system-tech-spec.md](../devdocs/entity-event-system-tech-spec.md)
+- **Empirical Benchmark Report**: [docs/devdocs/entity-event-system-benchmark-report.md](../devdocs/entity-event-system-benchmark-report.md)
 - **BDD Specification**: [features/viz/core/entity_event_system_and_columnar_stores-27.feature](../../features/viz/core/entity_event_system_and_columnar_stores-27.feature)
 - **Predecessor ADRs**:
   - [ADR 0017: WASM and TypedArray Vector Physics](0017-wasm-typedarray-galaxy-physics-and-zero-alloc-rendering.md)

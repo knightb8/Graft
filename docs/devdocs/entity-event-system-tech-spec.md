@@ -1,9 +1,10 @@
 # Technical Specification: Entity Event System (EES) & Columnar Stores
 
 > **Target**: Next-Generation High-Performance Visualization Engine for Graft  
-> **Status**: Draft / Proposed Specification  
+> **Status**: Verified & Implemented  
 > **Governed by**: [ADR 0023](../adr/0023-entity-event-system-and-columnar-typedarray-stores.md)  
 > **BDD Specification**: [Feature 27](../../features/viz/core/entity_event_system_and_columnar_stores-27.feature)  
+> **Empirical Benchmark**: [Performance Report](entity-event-system-benchmark-report.md)  
 
 ---
 
