@@ -10,6 +10,7 @@ import {
   BlastAttenuationResult,
   computeBlastAttenuation,
   folderGroupKeyOfNode,
+  classifyArtifactStage,
   computeSankeyColumns,
   orderBarsByBarycenter,
 } from "./sankey-engine.js";
@@ -69,7 +70,7 @@ export class SankeyView {
 
   private lastLaidOutBars = new Map<string, LayoutBar>();
   private lastComputedContentHeight = 680;
-  private clickTimer: any = null;
+  private activeContextMenuEl: any = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -112,6 +113,7 @@ export class SankeyView {
   }
 
   reset(): void {
+    this.closeContextMenu();
     this.collapsedDirs.clear();
     this.expandedDirs.clear();
     this.hiddenDirs.clear();
@@ -194,24 +196,271 @@ export class SankeyView {
     this.render();
   }
 
+  toggleFolder(folderPath: string): void {
+    const expanded = this.isFolderExpanded(folderPath);
+    if (expanded) {
+      this.expandedDirs.delete(folderPath);
+      this.collapsedDirs.add(folderPath);
+    } else {
+      this.collapsedDirs.delete(folderPath);
+      this.expandedDirs.add(folderPath);
+    }
+    this.render();
+  }
+
+  expandStageFolders(stage: ArtifactStage): void {
+    for (const n of this.nodes) {
+      const st = classifyArtifactStage(n);
+      if (st === stage) {
+        const raw = n.sources?.[0]?.split(" · ")[0]?.trim() || n.id.split("#")[0] || "";
+        const parts = raw.replace(/\\/g, "/").split("/").filter(Boolean);
+        let cur = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          cur = cur ? `${cur}/${parts[i]}` : parts[i];
+          this.expandedDirs.add(cur);
+          this.collapsedDirs.delete(cur);
+        }
+      }
+    }
+    this.render();
+  }
+
+  collapseStageFolders(stage: ArtifactStage): void {
+    for (const n of this.nodes) {
+      const st = classifyArtifactStage(n);
+      if (st === stage) {
+        const raw = n.sources?.[0]?.split(" · ")[0]?.trim() || n.id.split("#")[0] || "";
+        const parts = raw.replace(/\\/g, "/").split("/").filter(Boolean);
+        let cur = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          cur = cur ? `${cur}/${parts[i]}` : parts[i];
+          this.collapsedDirs.add(cur);
+          this.expandedDirs.delete(cur);
+        }
+      }
+    }
+    this.render();
+  }
+
+  getContextMenuItems(barId: string): Array<{ id: string; label: string; icon: string; color?: string; action: () => void }> {
+    const lb = this.lastLaidOutBars.get(barId);
+    const isGroup = lb ? (lb.isGroup || barId.startsWith("dir:")) : barId.startsWith("dir:");
+    if (!lb && !barId.startsWith("dir:")) return [];
+
+    let folderPath = "";
+    if (barId.startsWith("dir:")) {
+      folderPath = barId.split(":").slice(2).join(":");
+    } else if (lb?.isGroup) {
+      folderPath = lb.label;
+    }
+
+    const isExpanded = isGroup ? this.isFolderExpanded(folderPath) : false;
+    const stage = lb?.stage || (barId.startsWith("dir:") ? (barId.split(":")[1] as ArtifactStage) : "code");
+    const label = lb?.label || folderPath;
+
+    const items: Array<{ id: string; label: string; icon: string; color?: string; action: () => void }> = [];
+
+    if (isGroup) {
+      items.push({
+        id: isExpanded ? "collapse-folder" : "expand-folder",
+        label: isExpanded ? `Collapse "${label}"` : `Expand "${label}"`,
+        icon: isExpanded ? "📁" : "📂",
+        action: () => this.toggleFolder(folderPath),
+      });
+      items.push({
+        id: "trace-blast",
+        label: "Trace Lineage Blast",
+        icon: "⚡",
+        color: "#fde047",
+        action: () => this.handleBarClick(barId),
+      });
+      items.push({
+        id: "expand-stage",
+        label: `Expand All in ${STAGE_META[stage]?.title || stage}`,
+        icon: "📂",
+        action: () => this.expandStageFolders(stage),
+      });
+      items.push({
+        id: "collapse-stage",
+        label: `Collapse All in ${STAGE_META[stage]?.title || stage}`,
+        icon: "📁",
+        action: () => this.collapseStageFolders(stage),
+      });
+      items.push({
+        id: "hide-bar",
+        label: "Hide Folder",
+        icon: "👁",
+        color: "#f87171",
+        action: () => {
+          const dirKey = barId.startsWith("dir:") ? barId.split(":").slice(2).join(":") : (lb?.id || barId);
+          this.hiddenDirs.add(dirKey);
+          this.render();
+        },
+      });
+    } else if (lb) {
+      items.push({
+        id: "trace-blast",
+        label: "Trace Lineage Blast",
+        icon: "⚡",
+        color: "#fde047",
+        action: () => this.handleBarClick(barId),
+      });
+      items.push({
+        id: "focus-inspector",
+        label: "Focus in Detail Inspector",
+        icon: "📄",
+        action: () => this.onSelect(lb.memberIds[0] || lb.id),
+      });
+
+      // If child belongs to an expanded folder, offer collapsing parent folder
+      const raw = lb.memberIds[0] || lb.id;
+      const parts = raw.split("#")[0].replace(/\\/g, "/").split("/").filter(Boolean);
+      if (parts.length > 1) {
+        const parentDir = parts.slice(0, parts.length - 1).join("/");
+        if (this.isFolderExpanded(parentDir)) {
+          items.push({
+            id: "collapse-parent-folder",
+            label: `Collapse Parent Folder "${parentDir}"`,
+            icon: "📁",
+            action: () => this.toggleFolder(parentDir),
+          });
+        }
+      }
+
+      items.push({
+        id: "hide-bar",
+        label: "Hide Bar",
+        icon: "👁",
+        color: "#f87171",
+        action: () => {
+          this.hiddenDirs.add(lb.id);
+          this.render();
+        },
+      });
+    }
+
+    return items;
+  }
+
+  closeContextMenu(): void {
+    if (this.activeContextMenuEl) {
+      try {
+        this.activeContextMenuEl.remove();
+      } catch {
+        // ignore
+      }
+      this.activeContextMenuEl = null;
+    }
+  }
+
+  openContextMenu(barId: string, clientX: number, clientY: number): void {
+    this.closeContextMenu();
+    if (typeof document === "undefined") return;
+
+    const items = this.getContextMenuItems(barId);
+    if (items.length === 0) return;
+
+    const menu = document.createElement("div");
+    menu.className = "sankey-context-menu";
+    menu.style.cssText = `
+      position: fixed;
+      left: ${clientX}px;
+      top: ${clientY}px;
+      z-index: 99999;
+      background: var(--panel, #181c20);
+      border: 1px solid var(--border, #2d3748);
+      border-radius: 7px;
+      padding: 5px 0;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.7);
+      font-size: 11.5px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink, #e7e9ea);
+      min-width: 180px;
+      user-select: none;
+    `;
+
+    for (const it of items) {
+      if (it.id === "expand-stage" || it.id === "hide-bar") {
+        const divider = document.createElement("div");
+        divider.style.cssText = "height: 1px; background: var(--border, #242b30); margin: 4px 0;";
+        menu.appendChild(divider);
+      }
+      const row = document.createElement("div");
+      row.className = "sankey-menu-item";
+      row.style.cssText = `
+        padding: 6px 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: ${it.color || "var(--ink, #e7e9ea)"};
+        font-weight: 500;
+      `;
+      row.innerHTML = `<span style="font-size: 13px;">${it.icon}</span> <span>${this.esc(it.label)}</span>`;
+      row.addEventListener("mouseenter", () => {
+        row.style.background = "var(--panel2, #242b30)";
+      });
+      row.addEventListener("mouseleave", () => {
+        row.style.background = "transparent";
+      });
+      row.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.closeContextMenu();
+        it.action();
+      });
+      menu.appendChild(row);
+    }
+
+    document.body.appendChild(menu);
+
+    try {
+      const rect = menu.getBoundingClientRect();
+      if (rect.right > window.innerWidth) {
+        menu.style.left = `${Math.max(10, window.innerWidth - rect.width - 12)}px`;
+      }
+      if (rect.bottom > window.innerHeight) {
+        menu.style.top = `${Math.max(10, window.innerHeight - rect.height - 12)}px`;
+      }
+    } catch {
+      // ignore
+    }
+
+    this.activeContextMenuEl = menu;
+
+    const onDocDown = (ev: MouseEvent) => {
+      if (!menu.contains(ev.target as Node)) {
+        this.closeContextMenu();
+        document.removeEventListener("pointerdown", onDocDown);
+        document.removeEventListener("keydown", onDocKey);
+      }
+    };
+    const onDocKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") {
+        this.closeContextMenu();
+        document.removeEventListener("pointerdown", onDocDown);
+        document.removeEventListener("keydown", onDocKey);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener("pointerdown", onDocDown);
+      document.addEventListener("keydown", onDocKey);
+    }, 10);
+  }
+
   handleBarDoubleClick(barId: string): void {
     const lb = this.lastLaidOutBars.get(barId);
+    if (!lb && barId.startsWith("dir:")) {
+      const folderPath = barId.split(":").slice(2).join(":");
+      this.toggleFolder(folderPath);
+      return;
+    }
     if (!lb) return;
 
     if (lb.isGroup || barId.startsWith("dir:")) {
       const folderPath = barId.startsWith("dir:")
         ? barId.split(":").slice(2).join(":")
         : lb.label;
-
-      const expanded = this.isFolderExpanded(folderPath);
-      if (expanded) {
-        this.expandedDirs.delete(folderPath);
-        this.collapsedDirs.add(folderPath);
-      } else {
-        this.collapsedDirs.delete(folderPath);
-        this.expandedDirs.add(folderPath);
-      }
-      this.render();
+      this.toggleFolder(folderPath);
     }
   }
 
@@ -611,7 +860,7 @@ export class SankeyView {
         if (badgeText) {
           svgColumns += `<text x="${b.w - 8}" y="${Math.min(b.h / 2 + 4, 18)}" text-anchor="end" fill="${badgeColor}" font-size="9.5" font-weight="700">${this.esc(badgeText)}</text>`;
         }
-        svgColumns += `<title>${this.esc(b.label)} (${b.memberCount} node${b.memberCount === 1 ? "" : "s"}${isAffected ? ` · Hop ${b.minHop} · Blast Energy ${Math.round(b.maxEnergy * 100)}%` : ""}${b.hasGap ? " — GAP: 0 linked tests/docs" : ""})\n• Click: Energize affected lineage\n• ${b.isGroup ? "Double-click: Expand/collapse folder\n• " : ""}Right-click: Hide folder/bar\n• Drag: Move bar</title>`;
+        svgColumns += `<title>${this.esc(b.label)} (${b.memberCount} node${b.memberCount === 1 ? "" : "s"}${isAffected ? ` · Hop ${b.minHop} · Blast Energy ${Math.round(b.maxEnergy * 100)}%` : ""}${b.hasGap ? " — GAP: 0 linked tests/docs" : ""})\n• Click: Select & trace lineage blast\n• Right-click or Ctrl+click: Open menu (expand, collapse, hide)\n• Chevron ▸/▾ or Double-click: Toggle folder expansion\n• Drag: Move bar</title>`;
         svgColumns += `</g>`;
       }
       svgColumns += `</g>`;
@@ -739,22 +988,23 @@ export class SankeyView {
       let startOffX = 0;
       let startOffY = 0;
 
-      el.addEventListener("contextmenu", (ev: MouseEvent) => {
+      const handleContext = (ev: MouseEvent) => {
         ev.preventDefault();
         ev.stopPropagation();
-        if (dirKey) {
-          this.hiddenDirs.add(dirKey);
-          this.render();
+        this.openContextMenu(barId, ev.clientX, ev.clientY);
+      };
+
+      el.addEventListener("contextmenu", handleContext);
+
+      el.addEventListener("click", (ev: MouseEvent) => {
+        if (ev.ctrlKey || ev.metaKey) {
+          handleContext(ev);
         }
       });
 
       el.addEventListener("dblclick", (ev: MouseEvent) => {
         ev.preventDefault();
         ev.stopPropagation();
-        if (this.clickTimer) {
-          clearTimeout(this.clickTimer);
-          this.clickTimer = null;
-        }
         this.handleBarDoubleClick(barId);
       });
 
@@ -808,17 +1058,9 @@ export class SankeyView {
           // ignore
         }
         if (!moved) {
-          // Disambiguate single-click from double-click via timer
-          if (this.clickTimer) {
-            clearTimeout(this.clickTimer);
-            this.clickTimer = null;
-            this.handleBarDoubleClick(barId);
-          } else {
-            this.clickTimer = setTimeout(() => {
-              this.clickTimer = null;
-              this.handleBarClick(barId);
-            }, 220);
-          }
+          if (ev.ctrlKey || ev.metaKey) return;
+          // Simple single click: immediately select bar without delay or race conditions!
+          this.handleBarClick(barId);
         } else {
           this.render();
         }

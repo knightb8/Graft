@@ -55,7 +55,7 @@ function createMockContainer(width = 1200, height = 700) {
   return container;
 }
 
-test("Double-click expands folder while single click traces dependency flows", async () => {
+test("Simple click immediately selects while right-click or ctrl-click opens contextual menu with expansion controls", async () => {
   const container = createMockContainer();
   const sankey = new SankeyView(container);
 
@@ -75,16 +75,30 @@ test("Double-click expands folder while single click traces dependency flows", a
   // Initially src/graph is collapsed
   assert.equal(sankey.isFolderExpanded("src/graph"), false, "src/graph should start collapsed");
 
-  // Single click disambiguation: handles blast trace without destroying DOM on click
+  // Single click: immediately selects without delay
   sankey.handleBarClick("dir:code:src/graph");
   assert.ok(sankey.selectedBarIds, "Single click should select the bar");
   assert.ok(sankey.selectedBarIds.includes("src/graph/core.ts"), "Blast trace should target members");
 
-  // Double click expands folder
+  // Context menu items for folder bar
+  const menuItems = sankey.getContextMenuItems("dir:code:src/graph");
+  assert.ok(menuItems.length >= 4, "Context menu should offer multiple actions");
+  const expandAction = menuItems.find((m) => m.id === "expand-folder");
+  assert.ok(expandAction, "Context menu must include 'Expand Folder' action");
+
+  // Executing the expand action expands the folder
+  expandAction!.action();
+  assert.equal(sankey.isFolderExpanded("src/graph"), true, "Menu expand action should expand the folder");
+  assert.ok(sankey.selectedBarIds, "Selection should persist after menu expansion");
+
+  // Context menu now reflects collapse action
+  const expandedMenu = sankey.getContextMenuItems("dir:code:src/graph");
+  const collapseAction = expandedMenu.find((m) => m.id === "collapse-folder");
+  assert.ok(collapseAction, "Context menu should now offer 'Collapse Folder'");
+
+  // Double click also toggles folder
   sankey.handleBarDoubleClick("dir:code:src/graph");
-  assert.equal(sankey.isFolderExpanded("src/graph"), true, "Double click should expand the folder");
-  // Node selection should NOT be toggled off on double click
-  assert.ok(sankey.selectedBarIds, "Selection should persist after double click expansion");
+  assert.equal(sankey.isFolderExpanded("src/graph"), false, "Double click should collapse the folder back");
 });
 
 test("Progressive one-level drill-down compacts single-child directory chains", async () => {

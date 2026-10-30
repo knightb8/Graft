@@ -10,13 +10,14 @@ Feature: Hierarchical Drill-Down and Crossing-Minimized Ordering in Stacked Flow
     And the Stacked Flow column visualization is rendered with stages for each Tripartite scope
 
   @covers:viewer/sankey.ts @covers:viewer/main.ts @covers:test/viz-sankey-columns.test.ts
-  Scenario: Double-click expands folder while single click traces dependency flows
+  Scenario: Simple click immediately selects while right-click or ctrl-click opens contextual menu with expansion controls
     Given a collapsed directory bar in the Code column
     When the user single-clicks the directory bar
-    Then the directory should be selected and its incoming and outgoing ribbon flows highlighted
-    And the directory bar DOM element should remain intact without re-rendering the entire canvas
-    When the user double-clicks the directory bar
-    Then the directory should toggle to expanded state without unselecting the node on the second click
+    Then the directory should be selected immediately and its incoming and outgoing ribbon flows highlighted
+    When the user right-clicks or ctrl-clicks the directory bar
+    Then a floating context menu should open providing expand, collapse, blast trace, and hide actions
+    When the user selects the expand action from the context menu or clicks the chevron hit area
+    Then the directory should toggle to expanded state without unselecting the node
 
   @covers:viewer/sankey.ts @covers:test/viz-sankey-columns.test.ts
   Scenario: Progressive one-level drill-down compacts single-child directory chains

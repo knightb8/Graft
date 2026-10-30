@@ -29,11 +29,19 @@ The Stacked Flow (Miller-Sankey) column view introduced in ADR 0016 provided a 5
 
 ## Decision Outcome & Architecture
 
-### 1. Click vs. Double-Click Disambiguation (C1)
-- **DOM Stability & Event Decoupling**:
-  - Replace destructive `innerHTML` replacements on `pointerup` with targeted class and attribute toggling (`classList.toggle('selected')`, SVG path updates).
-  - Explicitly disambiguate single-click selection from double-click expansion using a short debounce timer (~250ms) or distinct pointer event handling.
-  - A single click selects the bar and illuminates connected ribbons without recreating the DOM. A double click toggles the directory's expansion state without untoggling the selection.
+### 1. Click vs. Contextual Menu & Chevron Expansion (C1)
+- **Immediate Single-Click Selection**:
+  - A simple left click on any bar immediately selects it and calculates directional blast attenuation across all stages without debounce latency or inter-element race conditions.
+- **Right-Click & Ctrl-Click Context Menu**:
+  - Right-clicking (or Ctrl/Cmd-clicking) on any bar opens a floating Context Menu with distinct, unambiguous actions:
+    - 📂 **Expand Folder** / 📁 **Collapse Folder** (for directory groups)
+    - ⚡ **Trace Lineage Blast** (initiates forward/reverse blast propagation)
+    - 📂 **Expand All in Stage** / 📁 **Collapse All in Stage**
+    - 📄 **Focus in Detail Inspector** (for file leaves)
+    - 👁 **Hide Bar / Folder**
+- **Chevron Hit-Area & Native Double-Click**:
+  - The leading `▸` / `▾` chevron on folder bars provides a dedicated hit area that directly toggles folder expansion on single click.
+  - Native double-click (`dblclick`) on folder bars remains supported as a direct keyboard/mouse shortcut without delaying single-click selection.
 
 ### 2. Progressive Drill-Down & Single-Child Chain Compaction (C2)
 - **Arbitrary Depth Hierarchy**:
