@@ -37,35 +37,35 @@ run_bash_tripartite_audit() {
         [ -z "$f" ] && continue
         ((total_features++))
         
-        # Check ADR link (either @adr:<path> or narrative [ADR](docs/adr/...))
-        if ! grep -qE '(@adr:|\[(ADR|Architectural Decision)[^]]*\]\(docs/adr/)' "$f"; then
+        # Check ADR link (either @adr:<path>, @governs:<path>, @governed_by:<path> or narrative [ADR](docs/adr/...))
+        if ! grep -qE '(@(adr|governs|governed_by):|\[(ADR|Architectural Decision)[^]]*\]\(docs/adr/)' "$f"; then
             unanchored_features+=("$f")
         fi
         
-        # Check code/test coverage link
-        if ! grep -qE "@covers:" "$f"; then
+        # Check code/test coverage link (@covers: or @specifies:)
+        if ! grep -qE "@(covers|specifies):" "$f"; then
             uncovered_features+=("$f")
         fi
 
-        # Check for broken @adr: links
+        # Check for broken ADR links
         while IFS= read -r tag; do
             [ -z "$tag" ] && continue
-            local target="${tag#@adr:}"
+            local target="${tag#*:}"
             target="${target%[),;]*}"
             if [ ! -f "$target" ]; then
-                broken_refs+=("$f -> @adr:$target")
+                broken_refs+=("$f -> $tag")
             fi
-        done < <(grep -oE "@adr:[^ ]+" "$f" || true)
+        done < <(grep -oE "@(adr|governs|governed_by):[^ ]+" "$f" || true)
 
-        # Check for broken @covers: links
+        # Check for broken covers links
         while IFS= read -r tag; do
             [ -z "$tag" ] && continue
-            local target="${tag#@covers:}"
+            local target="${tag#*:}"
             target="${target%[),;]*}"
             if [ ! -f "$target" ]; then
-                broken_refs+=("$f -> @covers:$target")
+                broken_refs+=("$f -> $tag")
             fi
-        done < <(grep -oE "@covers:[^ ]+" "$f" || true)
+        done < <(grep -oE "@(covers|specifies):[^ ]+" "$f" || true)
 
     done < <(find "$feat_dir" -type f -name "*.feature" | sort)
 

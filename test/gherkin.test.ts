@@ -47,11 +47,13 @@ Feature: Checkout
 test("Scenario 4: Extracting file references from markdown links, tags, and step strings", () => {
   const content = `
 @adr:docs/adr/0001-init.md
+@governed_by:docs/adr/0002.md
 @ref:features/billing.feature
 Feature: Order Checkout
   Governed by [ADR](docs/adr/0004.md).
 
   @covers:src/billing/checkout.ts
+  @specifies:src/billing/invoice.ts
   Scenario: Process payment
     Given the config file "config/app.json"
     When I submit payment
@@ -62,6 +64,10 @@ Feature: Order Checkout
   // Tag @adr:... -> influences
   const adrTag = edges.find((e) => e.relation === "influences" && e.specifier === "docs/adr/0001-init.md");
   assert.ok(adrTag, "must extract @adr:... tag as influences edge");
+
+  // Tag @governed_by:... -> influences
+  const governedByTag = edges.find((e) => e.relation === "influences" && e.specifier === "docs/adr/0002.md");
+  assert.ok(governedByTag, "must extract @governed_by:... tag as influences edge");
 
   // Tag @ref:... -> references
   const refTag = edges.find((e) => e.relation === "references" && e.specifier === "features/billing.feature");
@@ -74,6 +80,10 @@ Feature: Order Checkout
   // Scenario tag @covers:... -> covers
   const coversTag = edges.find((e) => e.relation === "covers" && e.specifier === "src/billing/checkout.ts");
   assert.ok(coversTag, "must extract @covers:... tag as covers edge");
+
+  // Scenario tag @specifies:... -> covers
+  const specifiesTag = edges.find((e) => e.relation === "covers" && e.specifier === "src/billing/invoice.ts");
+  assert.ok(specifiesTag, "must extract @specifies:... tag as covers edge");
 
   // Quoted file path in step -> references
   const stepFile = edges.find((e) => e.relation === "references" && e.specifier === "config/app.json");

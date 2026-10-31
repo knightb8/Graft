@@ -98,17 +98,19 @@ export function extractGherkin(
     if (!tags) return;
     for (const tag of tags) {
       const name = tag.name.replace(/^@/, "");
-      if (name.startsWith("adr:")) {
+      if (name.startsWith("adr:") || name.startsWith("governs:") || name.startsWith("governed_by:")) {
+        const prefix = name.startsWith("adr:") ? 4 : (name.startsWith("governs:") ? 8 : 12);
         edges.push({
           source: sourceId,
-          specifier: name.slice(4),
+          specifier: name.slice(prefix),
           relation: "influences",
           file: path,
         });
-      } else if (name.startsWith("covers:")) {
+      } else if (name.startsWith("covers:") || name.startsWith("specifies:")) {
+        const prefix = name.startsWith("covers:") ? 7 : 10;
         edges.push({
           source: sourceId,
-          specifier: name.slice(7),
+          specifier: name.slice(prefix),
           relation: "covers",
           file: path,
         });

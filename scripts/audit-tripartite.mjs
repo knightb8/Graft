@@ -62,13 +62,13 @@ for (const feat of featureFiles) {
   const adrLinks = new Set();
   const coversLinks = new Set();
 
-  // Match @adr:<path>
-  const adrTagMatches = content.matchAll(/@adr:([^\s@\r\n]+)/g);
+  // Match @adr:<path>, @governs:<path>, @governed_by:<path>
+  const adrTagMatches = content.matchAll(/@(adr|governs|governed_by):([^\s@\r\n]+)/g);
   for (const m of adrTagMatches) {
-    const target = m[1].replace(/[),;]+$/, "");
+    const target = m[2].replace(/[),;]+$/, "");
     adrLinks.add(target);
     if (!existsSync(join(rootDir, target))) {
-      brokenRefs.push({ file: feat, tag: `@adr:${target}`, target });
+      brokenRefs.push({ file: feat, tag: `@${m[1]}:${target}`, target });
     } else {
       if (!adrReferences.has(target)) adrReferences.set(target, new Set());
       adrReferences.get(target).add(feat);
@@ -88,13 +88,13 @@ for (const feat of featureFiles) {
     }
   }
 
-  // Match @covers:<path>
-  const coversTagMatches = content.matchAll(/@covers:([^\s@\r\n]+)/g);
+  // Match @covers:<path>, @specifies:<path>
+  const coversTagMatches = content.matchAll(/@(covers|specifies):([^\s@\r\n]+)/g);
   for (const m of coversTagMatches) {
-    const target = m[1].replace(/[),;]+$/, "");
+    const target = m[2].replace(/[),;]+$/, "");
     coversLinks.add(target);
     if (!existsSync(join(rootDir, target))) {
-      brokenRefs.push({ file: feat, tag: `@covers:${target}`, target });
+      brokenRefs.push({ file: feat, tag: `@${m[1]}:${target}`, target });
     } else {
       if (!coversReferences.has(target)) coversReferences.set(target, new Set());
       coversReferences.get(target).add(feat);
