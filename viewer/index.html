@@ -57,6 +57,12 @@
         <button type="button" class="ptool-btn active" id="baseGalaxyBtn" title="2D WebGL Galaxy & Cosmos Canvas" style="font-size:11px; padding:2px 8px; background:var(--accent, #38bdf8); color:#0b0e11; font-weight:600;">🌌 Galaxy</button>
         <button type="button" class="ptool-btn" id="baseSankeyBtn" title="5-Column Stacked Lifecycle Flow Chart (ADRs → Specs → Code → Tests → Docs)" style="font-size:11px; padding:2px 8px;">📊 Stacked Flow</button>
       </div>
+      <div class="filter-group" id="layoutEngineGroup" style="border-right:1px solid var(--panel2, #242b30); padding-right:8px; margin-right:4px;">
+        <span class="cap">Layout</span>
+        <button type="button" class="ptool-btn engine-btn" data-layout-engine="stress" title="Fast 2-Level Stress Majorization layout with inter-galaxy repulsion" style="font-size:11px; padding:2px 8px;">Stress</button>
+        <button type="button" class="ptool-btn engine-btn" data-layout-engine="cosmos" title="ForceAtlas2 + Concentric Separation layout" style="font-size:11px; padding:2px 8px;">Cosmos</button>
+        <button type="button" class="ptool-btn engine-btn" data-layout-engine="d3" title="Original upstream D3-force layout with Barnes-Hut repulsion and semantic resting lengths" style="font-size:11px; padding:2px 8px;">Classic D3</button>
+      </div>
       <div class="filter-group">
         <span class="cap">Scope</span>
         <label class="scope-chip on" title="Toggle Code scope"><input type="checkbox" class="scope-cb" data-scope="code" checked><span class="sw sw-code"></span>code</label>

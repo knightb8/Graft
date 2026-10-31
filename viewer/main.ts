@@ -283,6 +283,7 @@ function setCanvasBase(base: CanvasBase): void {
   const gBtn = $("baseGalaxyBtn");
   const sBtn = $("baseSankeyBtn");
   const galaxyGroup = $("galaxyViewGroup");
+  const layoutGroup = $("layoutEngineGroup");
   const zoomCtl = document.querySelector<HTMLElement>(".zoomctl");
   const edgeChips = $("edgeChips");
   const filterBar = $("filterBar");
@@ -292,6 +293,7 @@ function setCanvasBase(base: CanvasBase): void {
   if (gEl) gEl.hidden = isSankey;
   if (sEl) sEl.hidden = !isSankey;
   if (galaxyGroup) galaxyGroup.style.display = isSankey ? "none" : "";
+  if (layoutGroup) layoutGroup.style.display = isSankey ? "none" : "";
   if (zoomCtl) zoomCtl.style.display = isSankey ? "none" : "";
   if (edgeChips) edgeChips.style.display = isSankey ? "none" : "";
   if (legend) legend.style.display = isSankey ? "none" : "";
