@@ -17,6 +17,13 @@ import Sigma, { DEFAULT_STYLES } from "sigma";
 import { pathCurved, pathLine, pathLoop, extremityArrow } from "sigma/rendering";
 import { MultiDirectedGraph } from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
+import {
+  forceSimulation,
+  forceManyBody,
+  forceLink,
+  forceCenter,
+  forceCollide,
+} from "d3-force";
 import { twoLevelLayout } from "./layout/two-level.js";
 import {
   type VizGraph, type NodeOwner, type TripartiteScope, type ConcreteScope,
@@ -30,6 +37,70 @@ import {
   extractTreeBackbone, relaxAndSeparateGalaxiesVectorized, lerpNodePositions, FlatSpatialGrid,
   consolidateOrphanClusters, synthesizeDirectoryTree, applyCosmosConcentricLayout,
 } from "./data.js";
+
+export type GraphLayoutEngine = "stress" | "cosmos" | "d3" | "legacy";
+
+/**
+ * Original upstream D3-force graph layout algorithm (from NanoNets/context-graph-engine):
+ * - Barnes-Hut repulsion: forceManyBody().strength(-220)
+ * - Hooke's Law semantic springs: forceLink().distance(REST[family]).strength(0.5)
+ *     structure (contains, part_of): 85px
+ *     dependency (uses, calls, imports, depends_on): 145px
+ *     contract (implements, extends, validates): 150px
+ *     association (references, documents, influences): 185px
+ * - Centering: forceCenter(0, 0)
+ * - Collision avoidance: forceCollide().radius((n) => n.r + 6)
+ */
+export function applyClassicD3ForceLayout(
+  nodes: SimNode[],
+  edges: Array<{ source: string; target: string; relation?: string }>,
+  iterations = 220,
+): void {
+  if (nodes.length === 0) return;
+
+  const nodeMap = new Map<string, SimNode>();
+  for (const n of nodes) {
+    nodeMap.set(n.id, n);
+  }
+
+  const validLinks: Array<{ source: SimNode; target: SimNode; relation?: string }> = [];
+  for (const e of edges) {
+    const s = nodeMap.get(e.source);
+    const t = nodeMap.get(e.target);
+    if (s && t && s !== t) {
+      validLinks.push({ source: s, target: t, relation: e.relation });
+    }
+  }
+
+  const REST_DISTANCES: Record<string, number> = {
+    structure: 85,
+    dependency: 145,
+    contract: 150,
+    association: 185,
+  };
+
+  const sim = forceSimulation(nodes as any)
+    .force("charge", forceManyBody().strength(-220))
+    .force(
+      "link",
+      forceLink(validLinks as any)
+        .distance((l: any) => {
+          const fam = famOf(l.relation || "uses");
+          return REST_DISTANCES[fam] ?? 145;
+        })
+        .strength(0.5),
+    )
+    .force("center", forceCenter(0, 0))
+    .force(
+      "collide",
+      forceCollide<any>().radius((n: any) => (n.r || 8) + 6),
+    )
+    .stop();
+
+  for (let i = 0; i < iterations; i++) {
+    sim.tick();
+  }
+}
 
 export interface SimNode {
   id: string;
@@ -161,7 +232,7 @@ export class GraphView {
   landmarkSet = new Set<string>();
   triStateResult: TriStateFilterResult | null = null;
   public autoRebounce = true;
-  public layoutEngine: "stress" | "legacy" = "stress";
+  public layoutEngine: GraphLayoutEngine = "stress";
   public contractionMode: EdgeContractionMode = "coupled";
   public weightTuning: CosmosWeightTuning = { ...COSMOS_PRESETS.coupled };
   public supportNodes: Set<string> = new Set<string>();
@@ -188,7 +259,7 @@ export class GraphView {
   private dragAnimId: number | null = null;
   private lastDraggedNode: string | null = null;
 
-  setLayoutEngine(engine: "stress" | "legacy"): void {
+  setLayoutEngine(engine: GraphLayoutEngine): void {
     this.layoutEngine = engine;
     this.persistCosmosConfig();
     if (this.autoRebounce) {
@@ -217,7 +288,7 @@ export class GraphView {
   private loadPersistedCosmosConfig(): {
     mode?: EdgeContractionMode;
     tuning?: Partial<CosmosWeightTuning>;
-    layoutEngine?: "stress" | "legacy";
+    layoutEngine?: GraphLayoutEngine;
   } | null {
     if (typeof localStorage === "undefined") return null;
     try {
@@ -559,7 +630,12 @@ export class GraphView {
       }
       const basePreset = COSMOS_PRESETS[this.contractionMode] ?? COSMOS_PRESETS.coupled;
       this.weightTuning = { ...basePreset, ...(saved.tuning ?? {}) };
-      if (saved.layoutEngine === "stress" || saved.layoutEngine === "legacy") {
+      if (
+        saved.layoutEngine === "stress" ||
+        saved.layoutEngine === "cosmos" ||
+        saved.layoutEngine === "d3" ||
+        saved.layoutEngine === "legacy"
+      ) {
         this.layoutEngine = saved.layoutEngine;
       }
     }
@@ -958,6 +1034,8 @@ export class GraphView {
             n.y = pos.y;
           }
         }
+      } else if (this.layoutEngine === "d3") {
+        applyClassicD3ForceLayout(this.nodes, effectiveGraph.edges);
       } else {
         const virtualSprings: string[] = [];
         try {
@@ -1669,6 +1747,8 @@ export class GraphView {
           sn.y = pos.y;
         }
       }
+    } else if (this.layoutEngine === "d3") {
+      applyClassicD3ForceLayout(simNodes, visibleEdges);
     } else {
       applyCosmosConcentricLayout(simNodes, visibleEdges, this.contractionMode, this.weightTuning);
     }

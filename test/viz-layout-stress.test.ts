@@ -295,6 +295,15 @@ test("Layout engine toggle switches between stress-SGD and legacy pipelines", as
   assert.equal(typeof legacyX, "number");
   assert.equal(Number.isNaN(legacyX), false);
 
+  // Switch to classic D3 force engine
+  view.setLayoutEngine("d3");
+  assert.equal(view.layoutEngine, "d3");
+  view.setData(mockGraph, "context");
+  const d3X = view.nodes[0].x;
+  const d3Y = view.nodes[0].y;
+  assert.equal(typeof d3X, "number");
+  assert.equal(Number.isNaN(d3X), false);
+
   // Drag physics: simulate interactive drag
   const dragged = view.nodes[0];
   const initialX = dragged.x;
@@ -303,4 +312,33 @@ test("Layout engine toggle switches between stress-SGD and legacy pipelines", as
   assert.ok(Math.abs(dragged.x - (initialX + 50)) < 1e-4);
   assert.ok(Math.abs(dragged.y - (initialY + 50)) < 1e-4);
   (view as any).onNodeDragEnd();
+});
+
+test("applyClassicD3ForceLayout converges with Barnes-Hut repulsion and semantic resting springs", async () => {
+  const { applyClassicD3ForceLayout } = await import("../viewer/graph.js");
+
+  const nodes = [
+    { id: "a", name: "a", x: 10, y: 10, r: 8 },
+    { id: "b", name: "b", x: 20, y: 20, r: 10 },
+    { id: "c", name: "c", x: 30, y: 30, r: 10 },
+  ];
+  const edges = [
+    { source: "a", target: "b", relation: "part_of" },
+    { source: "b", target: "c", relation: "uses" },
+  ];
+
+  applyClassicD3ForceLayout(nodes as any, edges, 100);
+
+  for (const n of nodes) {
+    assert.equal(typeof n.x, "number");
+    assert.equal(typeof n.y, "number");
+    assert.equal(Number.isNaN(n.x), false);
+    assert.equal(Number.isNaN(n.y), false);
+  }
+
+  // Nodes must be separated (not on top of each other)
+  const distAB = Math.hypot(nodes[0].x - nodes[1].x, nodes[0].y - nodes[1].y);
+  const distBC = Math.hypot(nodes[1].x - nodes[2].x, nodes[1].y - nodes[2].y);
+  assert.ok(distAB > 10, `distAB should be separated: ${distAB}`);
+  assert.ok(distBC > 10, `distBC should be separated: ${distBC}`);
 });

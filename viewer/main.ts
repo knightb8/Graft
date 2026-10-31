@@ -566,6 +566,12 @@ function syncSliderUI() {
   if (sliderGap && valGap) { sliderGap.value = String(tuning.clusterGap); valGap.textContent = String(tuning.clusterGap); }
   if (toggleHeuristics) { toggleHeuristics.checked = tuning.useHeuristics !== false; }
 
+  const activeEngine = view.layoutEngine === "legacy" ? "cosmos" : view.layoutEngine;
+  document.querySelectorAll<HTMLButtonElement>(".engine-btn").forEach((btn) => {
+    const eng = btn.getAttribute("data-layout-engine");
+    btn.classList.toggle("active", eng === activeEngine);
+  });
+
   const modeLabels: Record<EdgeContractionMode, string> = {
     coupled: "☍ Pull: Coupled ▾",
     code: "⚙ Pull: Code ▾",
@@ -574,7 +580,11 @@ function syncSliderUI() {
     directory: "📁 Pull: Directory ▾",
   };
   if (contractionToggle) {
-    contractionToggle.textContent = modeLabels[view.contractionMode] ?? "☍ Pull ▾";
+    if (view.layoutEngine === "d3") {
+      contractionToggle.textContent = "⚡ Classic D3 ▾";
+    } else {
+      contractionToggle.textContent = modeLabels[view.contractionMode] ?? "☍ Pull ▾";
+    }
   }
 
   document.querySelectorAll<HTMLButtonElement>(".preset-btn").forEach((btn) => {
@@ -585,6 +595,17 @@ function syncSliderUI() {
 
 // Initial sync of button labels and sliders with loaded/default config
 syncSliderUI();
+
+document.querySelectorAll<HTMLButtonElement>(".engine-btn").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const eng = btn.getAttribute("data-layout-engine") as any;
+    if (eng) {
+      view.setLayoutEngine(eng);
+      syncSliderUI();
+    }
+  });
+});
 
 contractionToggle?.addEventListener("click", (e) => {
   e.stopPropagation();

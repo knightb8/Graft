@@ -254,7 +254,7 @@ button:focus-visible,input:focus-visible,.tree-row:focus-visible{outline:2px sol
   cursor:pointer;
 }
 .ptool-btn:hover{color:var(--ink);background:var(--border)}
-.preset-btn.active{background:rgba(56, 189, 248, 0.22);color:var(--accent);border:1px solid rgba(56, 189, 248, 0.45)}
+.preset-btn.active, .engine-btn.active{background:rgba(56, 189, 248, 0.22);color:var(--accent);border:1px solid rgba(56, 189, 248, 0.45)}
 .picker-filter{padding:7px 10px;border-bottom:1px solid var(--border2);flex:none}
 .picker-filter input{
   width:100%;

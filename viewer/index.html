@@ -77,11 +77,17 @@
         <label class="scope-chip on" id="rainbowChip" title="Toggle rainbow edge coloring by relation type"><input type="checkbox" id="rainbowCb" checked>rainbow</label>
         <label class="scope-chip on" id="rebounceChip" title="Re-bounce galaxy layout in simulation style when filters change (uncheck to hold node positions)"><input type="checkbox" id="rebounceCb" checked>re-bounce</label>
         <div class="weights-menu-wrap" style="position:relative; display:inline-block;">
-          <button type="button" class="ptool-btn" id="contractionToggle" title="Configure Cosmos Gravity & Edge Pull Weights" style="margin-left:4px; font-size:11px; padding:2px 8px;">☍ Pull: Coupled ▾</button>
+          <button type="button" class="ptool-btn" id="contractionToggle" title="Configure Layout Engine & Edge Pull Weights" style="margin-left:4px; font-size:11px; padding:2px 8px;">☍ Pull: Coupled ▾</button>
           <div class="weights-popover" id="weightsMenu" hidden style="position:absolute; top:calc(100% + 6px); left:0; z-index:120; width:280px; background:var(--panel, #15181b); border:1px solid var(--panel2, #242b30); border-radius:8px; box-shadow:0 12px 32px rgba(0,0,0,0.55); padding:12px; font-size:12px; color:var(--ink, #e7e9ea);">
             <div style="font-weight:600; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
-              <span>Cosmos Gravity Tuning</span>
+              <span>Layout & Physics Tuning</span>
               <button type="button" id="closeWeightsMenu" style="background:none; border:none; color:var(--muted, #8b9298); cursor:pointer; font-size:14px; line-height:1;">✕</button>
+            </div>
+            <div style="font-size:10.5px; color:var(--muted, #8b9298); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">Engine</div>
+            <div class="engine-pills" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px;">
+              <button type="button" class="ptool-btn engine-btn" data-layout-engine="stress" title="Fast 2-Level Stress Majorization layout with inter-galaxy repulsion" style="font-size:10.5px; padding:2px 6px;">Stress</button>
+              <button type="button" class="ptool-btn engine-btn" data-layout-engine="cosmos" title="ForceAtlas2 + Concentric Separation layout" style="font-size:10.5px; padding:2px 6px;">Cosmos (FA2)</button>
+              <button type="button" class="ptool-btn engine-btn" data-layout-engine="d3" title="Original upstream D3-force layout with semantic spring resting lengths" style="font-size:10.5px; padding:2px 6px;">Classic D3</button>
             </div>
             <div style="font-size:10.5px; color:var(--muted, #8b9298); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">Presets</div>
             <div class="preset-pills" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px;">
