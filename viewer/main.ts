@@ -284,11 +284,22 @@ function setCanvasBase(base: CanvasBase): void {
   const sBtn = $("baseSankeyBtn");
   const galaxyGroup = $("galaxyViewGroup");
   const zoomCtl = document.querySelector<HTMLElement>(".zoomctl");
+  const edgeChips = $("edgeChips");
+  const filterBar = $("filterBar");
+  const legend = document.querySelector<HTMLElement>(".legend");
+  const lcount = document.querySelector<HTMLElement>(".lcount");
 
   if (gEl) gEl.hidden = isSankey;
   if (sEl) sEl.hidden = !isSankey;
   if (galaxyGroup) galaxyGroup.style.display = isSankey ? "none" : "";
   if (zoomCtl) zoomCtl.style.display = isSankey ? "none" : "";
+  if (edgeChips) edgeChips.style.display = isSankey ? "none" : "";
+  if (legend) legend.style.display = isSankey ? "none" : "";
+  if (lcount) lcount.style.display = isSankey ? "none" : "";
+
+  if (filterBar) {
+    filterBar.style.top = isSankey ? "10px" : "44px";
+  }
 
   if (gBtn) {
     gBtn.classList.toggle("active", !isSankey);

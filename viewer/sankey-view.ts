@@ -71,6 +71,8 @@ export class SankeyView {
   private lastLaidOutBars = new Map<string, LayoutBar>();
   private lastComputedContentHeight = 680;
   private activeContextMenuEl: any = null;
+  private lastClickTime = 0;
+  private lastClickBarId = "";
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -122,6 +124,8 @@ export class SankeyView {
     this.selectedId = null;
     this.selectedBarIds = null;
     this.hoveredBarId = null;
+    this.lastClickTime = 0;
+    this.lastClickBarId = "";
     this.panX = 0;
     this.panY = 0;
     this.zoom = 1.0;
@@ -912,7 +916,7 @@ export class SankeyView {
             fill: rgba(255, 255, 255, 0.16);
           }
         </style>
-        <div class="sankey-toolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:7px; padding:6px 12px; margin:10px 14px 4px 14px; font-size:11px; color:var(--ink, #e7e9ea); z-index:2; flex-shrink:0;">
+        <div class="sankey-toolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:7px; padding:6px 12px; margin:46px 14px 4px 14px; font-size:11px; color:var(--ink, #e7e9ea); z-index:2; flex-shrink:0;">
           <span style="font-weight:600; color:var(--accent, #38bdf8);">Stacked Lifecycle Flow</span>
           <button type="button" class="ptool-btn" id="sankeyGroupFolders" title="Roll up files & test suites into directory/domain bars">${collapsedCount > 0 ? `📁 Folders Grouped (${collapsedCount})` : "📁 Group by Folder"}</button>
           <button type="button" class="ptool-btn" id="sankeyExpandFiles" title="Expand all folders into individual files">📄 Expand All Files</button>
@@ -983,12 +987,20 @@ export class SankeyView {
     this.container.querySelector("#sankeyResetLayout")?.addEventListener("click", () => {
       this.resetLayout();
     });
-    this.container.querySelector("#sankeyClearTrace")?.addEventListener("click", () => {
-      this.selectedId = null;
-      this.selectedBarIds = null;
-      this.onSelect(null);
-      this.render();
-    });
+    const clearBtn = this.container.querySelector("#sankeyClearTrace");
+    if (clearBtn) {
+      clearBtn.addEventListener("pointerdown", (ev: Event) => {
+        ev.stopPropagation();
+      });
+      clearBtn.addEventListener("click", (ev: Event) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        this.selectedId = null;
+        this.selectedBarIds = null;
+        this.onSelect(null);
+        this.render();
+      });
+    }
 
     // Dynamic live ribbon refresh during dragging
     const ribbonEls = Array.from(this.container.querySelectorAll<SVGPathElement>(".sankey-ribbon"));
@@ -1108,8 +1120,18 @@ export class SankeyView {
         }
         if (!moved) {
           if (ev.ctrlKey || ev.metaKey) return;
-          // Simple single click: immediately select bar without delay or race conditions!
-          this.handleBarClick(barId);
+          const now = Date.now();
+          if (now - this.lastClickTime < 320 && this.lastClickBarId === barId) {
+            // Rapid second click within 320ms on the same bubble: DOUBLE CLICK!
+            this.lastClickTime = 0;
+            this.lastClickBarId = "";
+            this.handleBarDoubleClick(barId);
+          } else {
+            // First click: record time and immediately trigger single-click selection
+            this.lastClickTime = now;
+            this.lastClickBarId = barId;
+            this.handleBarClick(barId);
+          }
         } else {
           this.render();
         }
