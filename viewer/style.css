@@ -1,42 +1,112 @@
 /* graft viz — design tokens + app styles.
    Visual reference of record: docs/superpowers/specs/2026-07-15-graft-viz-design.md */
 :root{
-  --bg:#F4F6F6; --panel:#FFFFFF; --panel2:#FBFCFC; --ink:#17191B; --muted:#6B7278;
-  --border:#E2E6E7; --border2:#EDF0F1; --accent:#546FFF; --accent-ink:#546FFF;
-  --chip:#F0F3F3;
-  --sys:#4A7DF0; --con:#A06BDB; --fil:#D98E2B; --api:#C95CB8;
-  --k-file:#D98E2B; --k-class:#4A7DF0; --k-fn:#4F86C6; --k-method:#3AA7C9; --k-iface:#A06BDB; --k-type:#C95CB8; --k-enum:#B69B3D;
-  --scope-code:#4A7DF0; --scope-docs:#A06BDB; --scope-specs:#2E9E6B; --scope-transitive:#D98E2B;
-  --edge:#71828A; --canvas:#F8FAFA;
-}
-@media (prefers-color-scheme: dark){
-  :root{
-    --bg:#0E1012; --panel:#15181B; --panel2:#111417; --ink:#E7E9EA; --muted:#8B9298;
-    --border:#252B30; --border2:#1D2226; --accent:#7B8FFF; --accent-ink:#7B8FFF;
-    --chip:#1C2125;
-    --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
-    --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
-    --scope-code:#6B94F5; --scope-docs:#B487E0; --scope-specs:#34D399; --scope-transitive:#E0A04A;
-    --edge:#6E7B84; --canvas:#101315;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#0E1012; --panel:#15181B; --panel2:#111417; --ink:#E7E9EA; --muted:#8B9298;
-  --border:#252B30; --border2:#1D2226; --accent:#7B8FFF; --accent-ink:#7B8FFF;
-  --chip:#1C2125;
+  --bg:#0A0D10; --panel:#14191E; --panel2:#1A2127; --ink:#E7E9EA; --muted:#8B9298;
+  --border:#263038; --border2:#1D242A; --accent:#38BDF8; --accent-ink:#0B1319;
+  --chip:#1A2127;
   --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
   --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
-  --scope-code:#6B94F5; --scope-docs:#B487E0; --scope-specs:#34D399; --scope-transitive:#E0A04A;
-  --edge:#6E7B84; --canvas:#101315;
+  --scope-code:#38BDF8; --scope-docs:#C084FC; --scope-specs:#34D399; --scope-transitive:#FBBF24;
+  --edge:#475569; --canvas:#0E1216;
 }
+
+/* 1. Dark (Default Charcoal) */
+:root[data-theme="dark"]{
+  --bg:#0A0D10; --panel:#14191E; --panel2:#1A2127; --ink:#E7E9EA; --muted:#8B9298;
+  --border:#263038; --border2:#1D242A; --accent:#38BDF8; --accent-ink:#0B1319;
+  --chip:#1A2127;
+  --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
+  --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
+  --scope-code:#38BDF8; --scope-docs:#C084FC; --scope-specs:#34D399; --scope-transitive:#FBBF24;
+  --edge:#475569; --canvas:#0E1216;
+}
+
+/* 2. Light (High-Contrast Clean Slate) */
 :root[data-theme="light"]{
-  --bg:#F4F6F6; --panel:#FFFFFF; --panel2:#FBFCFC; --ink:#17191B; --muted:#6B7278;
-  --border:#E2E6E7; --border2:#EDF0F1; --accent:#546FFF; --accent-ink:#546FFF;
-  --chip:#F0F3F3;
-  --sys:#4A7DF0; --con:#A06BDB; --fil:#D98E2B; --api:#C95CB8;
-  --k-file:#D98E2B; --k-class:#4A7DF0; --k-fn:#4F86C6; --k-method:#3AA7C9; --k-iface:#A06BDB; --k-type:#C95CB8; --k-enum:#B69B3D;
-  --scope-code:#4A7DF0; --scope-docs:#A06BDB; --scope-specs:#2E9E6B; --scope-transitive:#D98E2B;
-  --edge:#71828A; --canvas:#F8FAFA;
+  --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#F1F5F9; --ink:#0F172A; --muted:#475569;
+  --border:#CBD5E1; --border2:#E2E8F0; --accent:#0284C7; --accent-ink:#FFFFFF;
+  --chip:#F1F5F9;
+  --sys:#2563EB; --con:#7C3AED; --fil:#D97706; --api:#DB2777;
+  --k-file:#D97706; --k-class:#2563EB; --k-fn:#0284C7; --k-method:#0D9488; --k-iface:#7C3AED; --k-type:#DB2777; --k-enum:#CA8A04;
+  --scope-code:#0284C7; --scope-docs:#7C3AED; --scope-specs:#059669; --scope-transitive:#D97706;
+  --edge:#94A3B8; --canvas:#FFFFFF;
+}
+
+/* 3. Tokyo Night (Folke Neovim inspired) */
+:root[data-theme="tokyonight"]{
+  --bg:#1A1B26; --panel:#1F2335; --panel2:#24283B; --ink:#C0CAF5; --muted:#787C99;
+  --border:#292E42; --border2:#3B4261; --accent:#7AA2F7; --accent-ink:#1A1B26;
+  --chip:#24283B;
+  --sys:#7AA2F7; --con:#BB9AF7; --fil:#FF9E64; --api:#F7768E;
+  --k-file:#FF9E64; --k-class:#7AA2F7; --k-fn:#7DCFFF; --k-method:#73DACA; --k-iface:#BB9AF7; --k-type:#F7768E; --k-enum:#E0AF68;
+  --scope-code:#7AA2F7; --scope-docs:#BB9AF7; --scope-specs:#9ECE6A; --scope-transitive:#FF9E64;
+  --edge:#414868; --canvas:#16161E;
+}
+
+/* 4. Spring (Sakura Blossoms & Young Shoots) */
+:root[data-theme="spring"]{
+  --bg:#0D1713; --panel:#14241D; --panel2:#1B3027; --ink:#F0FDF4; --muted:#86EFAC;
+  --border:#2D5443; --border2:#213F32; --accent:#F472B6; --accent-ink:#500724;
+  --chip:#1B3027;
+  --sys:#38BDF8; --con:#F472B6; --fil:#FACC15; --api:#FB7185;
+  --k-file:#FACC15; --k-class:#38BDF8; --k-fn:#2DD4BF; --k-method:#4ADE80; --k-iface:#F472B6; --k-type:#FB7185; --k-enum:#FDE047;
+  --scope-code:#38BDF8; --scope-docs:#F472B6; --scope-specs:#4ADE80; --scope-transitive:#FACC15;
+  --edge:#2D5443; --canvas:#08100C;
+}
+
+/* 5. Summer (Azure Ocean & Coral Reef) */
+:root[data-theme="summer"]{
+  --bg:#051622; --panel:#0B2334; --panel2:#112F45; --ink:#E0F2FE; --muted:#7DD3FC;
+  --border:#1B4965; --border2:#14374D; --accent:#FF6B6B; --accent-ink:#450A0A;
+  --chip:#112F45;
+  --sys:#38BDF8; --con:#A78BFA; --fil:#FB923C; --api:#F43F5E;
+  --k-file:#FB923C; --k-class:#38BDF8; --k-fn:#06B6D4; --k-method:#2DD4BF; --k-iface:#A78BFA; --k-type:#F43F5E; --k-enum:#FBBF24;
+  --scope-code:#38BDF8; --scope-docs:#A78BFA; --scope-specs:#2DD4BF; --scope-transitive:#FB923C;
+  --edge:#1E5272; --canvas:#03101A;
+}
+
+/* 6. Autumn (Maple Amber & Burnt Cinnamon) */
+:root[data-theme="autumn"]{
+  --bg:#170E08; --panel:#24160C; --panel2:#301D10; --ink:#FEF3C7; --muted:#D97706;
+  --border:#523118; --border2:#3D2412; --accent:#EA580C; --accent-ink:#431407;
+  --chip:#301D10;
+  --sys:#EAB308; --con:#B91C1C; --fil:#EA580C; --api:#F43F5E;
+  --k-file:#EA580C; --k-class:#EAB308; --k-fn:#F97316; --k-method:#84CC16; --k-iface:#B91C1C; --k-type:#F43F5E; --k-enum:#FBBF24;
+  --scope-code:#EAB308; --scope-docs:#B91C1C; --scope-specs:#15803D; --scope-transitive:#EA580C;
+  --edge:#5C3A20; --canvas:#100905;
+}
+
+/* 7. Christmas (Holiday Pine, Crimson & Gold) */
+:root[data-theme="christmas"]{
+  --bg:#07160E; --panel:#0E2519; --panel2:#153424; --ink:#F8FAFC; --muted:#86EFAC;
+  --border:#1E4E35; --border2:#173D29; --accent:#E11D48; --accent-ink:#4C0519;
+  --chip:#153424;
+  --sys:#38BDF8; --con:#E11D48; --fil:#EAB308; --api:#F43F5E;
+  --k-file:#EAB308; --k-class:#38BDF8; --k-fn:#22C55E; --k-method:#10B981; --k-iface:#E11D48; --k-type:#F43F5E; --k-enum:#FACC15;
+  --scope-code:#38BDF8; --scope-docs:#E11D48; --scope-specs:#22C55E; --scope-transitive:#EAB308;
+  --edge:#1E4E35; --canvas:#040F0A;
+}
+
+/* 8. Synthwave / Tron (Neon Grid & Laser Cyan) */
+:root[data-theme="synthwave"]{
+  --bg:#0C051C; --panel:#160B30; --panel2:#211046; --ink:#F8F6FF; --muted:#B8A3E0;
+  --border:#A11F7C; --border2:#5E1349; --accent:#0FF0FC; --accent-ink:#0C051C;
+  --chip:#211046;
+  --sys:#0FF0FC; --con:#FF007F; --fil:#FFE600; --api:#FF00A0;
+  --k-file:#FFE600; --k-class:#0FF0FC; --k-fn:#38BDF8; --k-method:#39FF14; --k-iface:#FF007F; --k-type:#FF00A0; --k-enum:#FFE600;
+  --scope-code:#0FF0FC; --scope-docs:#FF007F; --scope-specs:#39FF14; --scope-transitive:#FFE600;
+  --edge:#7E1763; --canvas:#070212;
+}
+
+/* 9. Cyberpunk 2077 (Night City Electric Yellow & Neon Cyan) */
+:root[data-theme="cyberpunk"]{
+  --bg:#030508; --panel:#0A0E14; --panel2:#121822; --ink:#FCEE0A; --muted:#7E95A8;
+  --border:#FCEE0A55; --border2:#00F0FF33; --accent:#FCEE0A; --accent-ink:#000000;
+  --chip:#121822;
+  --sys:#00F0FF; --con:#FF003C; --fil:#FCEE0A; --api:#D600FF;
+  --k-file:#FCEE0A; --k-class:#00F0FF; --k-fn:#00E5FF; --k-method:#00FF66; --k-iface:#FF003C; --k-type:#D600FF; --k-enum:#FCEE0A;
+  --scope-code:#00F0FF; --scope-docs:#FF003C; --scope-specs:#FCEE0A; --scope-transitive:#FF7700;
+  --edge:#00F0FF44; --canvas:#010204;
 }
 
 *{box-sizing:border-box}
@@ -66,6 +136,16 @@ button:focus-visible,input:focus-visible,.tree-row:focus-visible{outline:2px sol
 .searchbox svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.45}
 .iconbtn{border:1px solid var(--border);background:var(--panel2);color:var(--ink);border-radius:8px;width:32px;height:32px;cursor:pointer;display:grid;place-items:center;flex:none;font:inherit;font-size:14px}
 .iconbtn:hover{border-color:var(--muted)}
+.theme-select-wrap{display:flex;align-items:center;position:relative;flex:none}
+.theme-select{
+  background:var(--panel2);color:var(--ink);
+  border:1px solid var(--border);border-radius:8px;
+  font:inherit;font-size:12px;font-weight:600;
+  padding:5px 8px;cursor:pointer;outline:none;
+  margin-left:6px;transition:border-color 0.15s ease;
+}
+.theme-select:hover{border-color:var(--accent)}
+.theme-select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
 .stage{display:flex;flex:1;min-height:0;background:var(--canvas)}
 .canvas-wrap{position:relative;flex:1;min-width:0}

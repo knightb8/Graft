@@ -821,9 +821,9 @@ export class SankeyView {
         const strokeColor = b.hasGap
           ? "#ef4444"
           : isSeed
-            ? "#ffffff"
+            ? "var(--accent, #38bdf8)"
             : isAffected && b.minHop === 1
-              ? "#fef08a"
+              ? "var(--amber, #fde047)"
               : meta.color;
         const strokeW = isSeed ? 2.6 : isAffected ? Number((1.2 + 1.2 * b.maxEnergy).toFixed(1)) : b.hasGap ? 2.0 : 1.0;
         const glowAttr = isSeed || (isAffected && b.maxEnergy >= 0.78) ? ` filter="url(#sankey-glow)"` : "";
@@ -853,16 +853,16 @@ export class SankeyView {
         const chevronHitW = 24;
         svgColumns += `<g class="sankey-bar" data-bar-id="${this.esc(b.id)}" data-dir-key="${this.esc(dirOrNodeKey)}" data-stage="${col.stage}" data-is-group="${b.isGroup ? "1" : "0"}" data-first-node="${this.esc(b.memberIds[0] || "")}" transform="translate(${b.x}, ${b.y})" opacity="${fillOpacity}">`;
         svgColumns += `<rect class="sankey-bar-bg" x="0" y="0" width="${b.w}" height="${b.h}" rx="5" fill="${isSeed ? `${meta.color}33` : "var(--panel, #181c20)"}" stroke="${strokeColor}" stroke-width="${strokeW}"${glowAttr}/>`;
-        svgColumns += `<rect class="sankey-bar-stripe" x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "#fde047" : meta.color}"/>`;
+        svgColumns += `<rect class="sankey-bar-stripe" x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "var(--amber, #fde047)" : meta.color}"/>`;
 
         if (b.isGroup) {
           svgColumns += `<g class="sankey-chevron-hit" data-bar-id="${this.esc(b.id)}" title="${isExpanded ? "Collapse folder" : "Expand folder"}">`;
           svgColumns += `<rect x="2" y="2" width="${chevronHitW}" height="${Math.max(14, b.h - 4)}" rx="3" fill="transparent"/>`;
           svgColumns += `<text class="sankey-chevron" data-bar-id="${this.esc(b.id)}" x="10" y="${Math.min(b.h / 2 + 4, 18)}" fill="${meta.color}" font-size="11" font-weight="700">${isExpanded ? "▾" : "▸"}</text>`;
           svgColumns += `</g>`;
-          svgColumns += `<text x="${chevronHitW + 4}" y="${Math.min(b.h / 2 + 4, 18)}" fill="${isSeed ? "#ffffff" : "var(--ink, #e7e9ea)"}" font-size="11" font-weight="700">${this.esc(shortLabel)}</text>`;
+          svgColumns += `<text x="${chevronHitW + 4}" y="${Math.min(b.h / 2 + 4, 18)}" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="700">${this.esc(shortLabel)}</text>`;
         } else {
-          svgColumns += `<text x="11" y="${Math.min(b.h / 2 + 4, 18)}" fill="${isSeed ? "#ffffff" : "var(--ink, #e7e9ea)"}" font-size="11" font-weight="${isSeed ? "700" : isAffected ? "600" : "400"}">${this.esc(shortLabel)}</text>`;
+          svgColumns += `<text x="11" y="${Math.min(b.h / 2 + 4, 18)}" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="${isSeed ? "700" : isAffected ? "600" : "400"}">${this.esc(shortLabel)}</text>`;
         }
 
         if (badgeText) {
@@ -920,11 +920,11 @@ export class SankeyView {
           <span style="font-weight:600; color:var(--accent, #38bdf8);">Stacked Lifecycle Flow</span>
           <button type="button" class="ptool-btn" id="sankeyGroupFolders" title="Roll up files & test suites into directory/domain bars">${collapsedCount > 0 ? `📁 Folders Grouped (${collapsedCount})` : "📁 Group by Folder"}</button>
           <button type="button" class="ptool-btn" id="sankeyExpandFiles" title="Expand all folders into individual files">📄 Expand All Files</button>
-          <input type="search" id="sankeyDirFilter" value="${this.esc(this.dirFilterQuery)}" placeholder="Filter folders/files (e.g. test/viz, src/graph)…" style="width:190px; background:var(--bg, #0b0e11); color:var(--ink, #e7e9ea); border:1px solid var(--border, #242b30); border-radius:5px; padding:2px 7px; font-size:11px;" title="Filter columns by directory or file substring (or use the left Files tree panel)">
-          ${hiddenDirCount > 0 ? `<button type="button" class="ptool-btn" id="sankeyRestoreHidden" style="color:#38bdf8;" title="Restore right-clicked hidden folders/bars">👁 Restore Hidden (${hiddenDirCount})</button>` : ""}
+          <input type="search" id="sankeyDirFilter" value="${this.esc(this.dirFilterQuery)}" placeholder="Filter folders/files (e.g. test/viz, src/graph)…" style="width:190px; background:var(--bg); color:var(--ink); border:1px solid var(--border); border-radius:5px; padding:2px 7px; font-size:11px;" title="Filter columns by directory or file substring (or use the left Files tree panel)">
+          ${hiddenDirCount > 0 ? `<button type="button" class="ptool-btn" id="sankeyRestoreHidden" style="color:var(--accent);" title="Restore right-clicked hidden folders/bars">👁 Restore Hidden (${hiddenDirCount})</button>` : ""}
           <label style="display:flex; align-items:center; gap:4px; cursor:pointer; margin-left:2px;" title="Highlight code modules with 0 linked tests or docs">
             <input type="checkbox" id="sankeyOnlyGaps" ${this.onlyGaps ? "checked" : ""}>
-            <span style="color:${gapCount > 0 ? "#f87171" : "var(--muted)"}; font-weight:600;">⚠ Gaps (${gapCount})</span>
+            <span style="color:${gapCount > 0 ? "var(--red, #f87171)" : "var(--muted)"}; font-weight:600;">⚠ Gaps (${gapCount})</span>
           </label>
           <label style="display:flex; align-items:center; gap:4px; margin-left:4px;" title="Minimum link count to draw a ribbon">
             <span style="color:var(--muted);">Min Flow: <b>${this.minCouplingWeight}</b></span>
@@ -935,7 +935,7 @@ export class SankeyView {
             <input type="range" id="sankeyHopDecay" min="0.3" max="1.0" step="0.05" value="${this.hopDecay}" style="width:55px; cursor:pointer;">
           </label>
           ${hasCustomLayout ? `<button type="button" class="ptool-btn" id="sankeyResetLayout" title="Reset dragged bars, columns, and pan/zoom">↺ Reset Layout</button>` : ""}
-          ${focusSeeds ? `<button type="button" class="ptool-btn" id="sankeyClearTrace" style="color:#fde047; font-weight:600;">✕ Clear Blast Trace</button>` : ""}
+          ${focusSeeds ? `<button type="button" class="ptool-btn" id="sankeyClearTrace" style="color:var(--amber); font-weight:600;">✕ Clear Blast Trace</button>` : ""}
           <span style="color:var(--muted, #8b9298); font-size:10px; margin-left:auto;">💡 Click bubble: Blast Trace · Dbl-click / ▸: Expand · Right-click: Hide · Drag: Move</span>
         </div>
         <div class="sankey-canvas-wrap" style="flex:1; width:100%; height:100%; overflow:auto; position:relative;">

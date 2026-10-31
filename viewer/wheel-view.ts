@@ -505,7 +505,7 @@ export class WheelView {
     const activeId = this.hoveredNodeId || this.selectedNodeId;
 
     let html = `
-      <div class="wheel-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg, #0d1012);">
+      <div class="wheel-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg);">
         <div class="wheel-toolbar" style="position:absolute; top:12px; left:16px; right:16px; z-index:10; display:flex; justify-content:space-between; align-items:center; pointer-events:none;">
           <div style="display:flex; gap:8px; align-items:center; pointer-events:auto;">
             <div class="ptool-group" style="display:flex; align-items:center; gap:2px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:6px; padding:2px 4px;">
@@ -514,20 +514,20 @@ export class WheelView {
               <button type="button" class="ptool-btn ${this.depth === "file" ? "active" : ""}" id="wheelDepthFile" style="font-size:11px; padding:2px 7px; border:none; border-radius:4px; cursor:pointer; background:${this.depth === "file" ? "var(--accent, #38bdf8)" : "transparent"}; color:${this.depth === "file" ? "#0b0e11" : "var(--ink, #e7e9ea)"}; font-weight:${this.depth === "file" ? "600" : "normal"};">📄 File</button>
               <button type="button" class="ptool-btn ${this.depth === "symbol" ? "active" : ""}" id="wheelDepthSymbol" style="font-size:11px; padding:2px 7px; border:none; border-radius:4px; cursor:pointer; background:${this.depth === "symbol" ? "var(--accent, #38bdf8)" : "transparent"}; color:${this.depth === "symbol" ? "#0b0e11" : "var(--ink, #e7e9ea)"}; font-weight:${this.depth === "symbol" ? "600" : "normal"};">⚡ Symbol</button>
             </div>
-            <button type="button" class="ptool-btn ${this.bundleChords ? "active" : ""}" id="wheelBundleToggle" style="font-size:11px; padding:3px 8px; border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer; background:${this.bundleChords ? "#064e3b" : "var(--panel, #15181b)"}; color:${this.bundleChords ? "#34d399" : "var(--ink, #e7e9ea)"}; font-weight:600;" title="Hierarchical Edge Bundling: route chords through shared radial corridors">🌿 Bundle Chords</button>
+            <button type="button" class="ptool-btn ${this.bundleChords ? "active" : ""}" id="wheelBundleToggle" style="font-size:11px; padding:3px 8px; border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer; background:${this.bundleChords ? "var(--features, #10b981)22" : "var(--panel, #15181b)"}; color:${this.bundleChords ? "var(--features, #10b981)" : "var(--ink, #e7e9ea)"}; font-weight:600;" title="Hierarchical Edge Bundling: route chords through shared radial corridors">🌿 Bundle Chords</button>
             ${
               this.drilldownModule
                 ? `
-              <div class="wheel-breadcrumb" style="display:flex; align-items:center; gap:6px; background:var(--panel, #15181b); border:1px solid #38bdf8; border-radius:6px; padding:2px 8px; font-size:11px; color:#38bdf8;">
+              <div class="wheel-breadcrumb" style="display:flex; align-items:center; gap:6px; background:var(--panel, #15181b); border:1px solid var(--accent, #38bdf8); border-radius:6px; padding:2px 8px; font-size:11px; color:var(--accent, #38bdf8);">
                 <span>Zoom: <strong>${this.drilldownModule}</strong></span>
-                <button type="button" id="wheelBreadcrumbReset" style="background:transparent; border:none; color:#f87171; cursor:pointer; font-size:12px; font-weight:bold; padding:0 2px;" title="Reset zoom">✕</button>
+                <button type="button" id="wheelBreadcrumbReset" style="background:transparent; border:none; color:var(--red, #f87171); cursor:pointer; font-size:12px; font-weight:bold; padding:0 2px;" title="Reset zoom">✕</button>
               </div>
             `
                 : ""
             }
           </div>
           <div style="display:flex; gap:8px; pointer-events:auto;">
-            ${activeId ? `<button type="button" class="ptool-btn" id="wheelClearBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:#fde047; border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">✕ Clear Focus</button>` : ""}
+            ${activeId ? `<button type="button" class="ptool-btn" id="wheelClearBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:var(--amber, #fde047); border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">✕ Clear Focus</button>` : ""}
             <button type="button" class="ptool-btn" id="wheelResetBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:var(--ink, #e7e9ea); border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">↺ Reset View</button>
           </div>
         </div>
@@ -591,14 +591,14 @@ export class WheelView {
         const isSelected = n.id === this.selectedNodeId || Boolean(n.memberIds?.includes(this.selectedNodeId || ""));
         const isHovered = n.id === this.hoveredNodeId || Boolean(n.memberIds?.includes(this.hoveredNodeId || ""));
         const r = isSelected || isHovered ? (n.isModule ? 6.5 : 4.5) : n.isModule ? 4.5 : 2.5;
-        const dotColor = isSelected ? "#ffffff" : isHovered ? "#38bdf8" : sec.color;
+        const dotColor = isSelected ? "var(--ink, #ffffff)" : isHovered ? "var(--accent, #38bdf8)" : sec.color;
 
         const tip = n.isModule
           ? `Module: ${n.name} (${n.childCount} files)\n• Click: Select\n• Double-click: In-place drill-down`
           : `${n.name || n.id}${n.childCount ? ` (${n.childCount} symbols)` : ""}\n• Click: Select`;
 
         html += `
-          <circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${dotColor}" stroke="var(--bg, #0d1012)" stroke-width="1" class="wheel-node" data-node-id="${n.id}" data-is-module="${n.isModule ? "1" : "0"}" data-module-key="${n.moduleKey || ""}" style="cursor:pointer;"><title>${tip}</title></circle>
+          <circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${dotColor}" stroke="var(--bg)" stroke-width="1" class="wheel-node" data-node-id="${n.id}" data-is-module="${n.isModule ? "1" : "0"}" data-module-key="${n.moduleKey || ""}" style="cursor:pointer;"><title>${tip}</title></circle>
         `;
       }
     }

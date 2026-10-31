@@ -398,7 +398,7 @@ export class FishboneView {
     const svgHeight = Math.max(h, Math.round((h / 2) + maxTipOffset + 90));
 
     let html = `
-      <div class="fishbone-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg, #0d1012);">
+      <div class="fishbone-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg);">
         <div class="fishbone-toolbar" style="position:absolute; top:12px; right:16px; z-index:10; display:flex; gap:8px;">
           <button type="button" class="ptool-btn" id="fishboneResetBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:var(--ink, #e7e9ea); border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">↺ Reset View</button>
         </div>
@@ -406,7 +406,7 @@ export class FishboneView {
           <defs>
             <linearGradient id="fishHeadGrad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stop-color="${model.head.color}" stop-opacity="0.32" />
-              <stop offset="100%" stop-color="#15181b" stop-opacity="0.85" />
+              <stop offset="100%" stop-color="var(--panel, #15181b)" stop-opacity="0.85" />
             </linearGradient>
             <filter id="boneGlow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.45)" />
@@ -468,7 +468,7 @@ export class FishboneView {
               <!-- Fish head capsule with nose pointing left -->
               <rect x="0" y="0" width="${model.head.width}" height="${model.head.height}" rx="14" fill="url(#fishHeadGrad)" stroke="${model.head.color}" stroke-width="2" />
               <text x="16" y="22" fill="${model.head.color}" font-size="10" font-weight="700" text-transform="uppercase" letter-spacing="0.5">${model.head.stage.toUpperCase()}</text>
-              <text x="16" y="40" fill="var(--ink, #ffffff)" font-size="13" font-weight="700" font-family="system-ui, sans-serif">${model.head.name}</text>
+              <text x="16" y="40" fill="var(--ink, #e7e9ea)" font-size="13" font-weight="700" font-family="system-ui, sans-serif">${model.head.name}</text>
             </g>
 
           </g>

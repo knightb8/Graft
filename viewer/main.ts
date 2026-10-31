@@ -814,20 +814,60 @@ $("zreset").addEventListener("click", () => view.resetView());
 
 /* ---------- theme ---------- */
 const THEME_KEY = "graft-viz-theme";
-const savedTheme = localStorage.getItem(THEME_KEY);
-if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
-$("themeBtn").addEventListener("click", () => {
+const ALL_THEMES = [
+  "dark",
+  "light",
+  "tokyonight",
+  "spring",
+  "summer",
+  "autumn",
+  "christmas",
+  "synthwave",
+  "cyberpunk",
+] as const;
+type ThemeName = typeof ALL_THEMES[number];
+
+function applyTheme(name: string): void {
+  const validTheme: ThemeName = (ALL_THEMES as readonly string[]).includes(name)
+    ? (name as ThemeName)
+    : "dark";
   const root = document.documentElement;
-  const current = root.getAttribute("data-theme");
-  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const isDark = current ? current === "dark" : systemDark;
-  const next = isDark ? "light" : "dark";
-  root.setAttribute("data-theme", next);
-  localStorage.setItem(THEME_KEY, next);
+  root.setAttribute("data-theme", validTheme);
+  try {
+    localStorage.setItem(THEME_KEY, validTheme);
+  } catch {}
+  const themeSelect = $("themeSelect") as HTMLSelectElement | null;
+  if (themeSelect && themeSelect.value !== validTheme) {
+    themeSelect.value = validTheme;
+  }
   view.restyle();
   renderChips();
   renderLegend();
   showDetail(view.selected);
+  if (state.canvasBase === "wheel") {
+    wheelView.render();
+  } else if (state.canvasBase === "fishbone") {
+    fishboneView.render();
+  } else if (state.canvasBase === "sankey") {
+    sankeyView.render();
+  }
+}
+
+const savedTheme = localStorage.getItem(THEME_KEY);
+const initialTheme = savedTheme && (ALL_THEMES as readonly string[]).includes(savedTheme)
+  ? savedTheme
+  : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+applyTheme(initialTheme);
+
+$("themeSelect")?.addEventListener("change", (ev) => {
+  applyTheme((ev.target as HTMLSelectElement).value);
+});
+
+$("themeBtn")?.addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const idx = ALL_THEMES.indexOf(current as ThemeName);
+  const nextIdx = (idx + 1) % ALL_THEMES.length;
+  applyTheme(ALL_THEMES[nextIdx]);
 });
 
 /* ---------- files picker controls ---------- */

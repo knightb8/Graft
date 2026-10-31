@@ -22,9 +22,22 @@
   <button class="iconbtn" id="pickerToggleAppbar" title="Toggle files sidebar" aria-label="Toggle files sidebar">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
   </button>
-  <button class="iconbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
-  </button>
+  <div class="theme-select-wrap">
+    <button class="iconbtn" id="themeBtn" title="Cycle theme" aria-label="Cycle theme">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+    </button>
+    <select id="themeSelect" class="theme-select" aria-label="Select color theme" title="Color Theme">
+      <option value="dark">Dark Slate</option>
+      <option value="light">Crisp Light</option>
+      <option value="tokyonight">Tokyo Night</option>
+      <option value="spring">Spring Blossom</option>
+      <option value="summer">Summer Azure</option>
+      <option value="autumn">Autumn Amber</option>
+      <option value="christmas">Christmas Pine</option>
+      <option value="synthwave">Synthwave Tron</option>
+      <option value="cyberpunk">Cyberpunk 2077</option>
+    </select>
+  </div>
 </header>
 
 <main class="stage" id="stage">
@@ -49,9 +62,9 @@
   <button class="picker-open-tab" id="pickerOpenTab" title="Open files panel" aria-label="Open files panel" hidden>▶ Files</button>
   <div class="canvas-wrap" id="canvasWrap">
     <div class="graph" id="graphContainer" role="region" aria-label="Interactive graph visualizer"></div>
-    <div class="graph sankey-canvas" id="sankeyContainer" role="region" aria-label="Stacked column Miller-Sankey flow visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg, #0d1012);"></div>
-    <div class="graph fishbone-canvas" id="fishboneContainer" role="region" aria-label="Ishikawa Fishbone cause-and-effect visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg, #0d1012);"></div>
-    <div class="graph wheel-canvas" id="wheelContainer" role="region" aria-label="Circular dependency wheel and chord visualizer" hidden style="position:absolute; inset:0; overflow:hidden; background:var(--bg, #0d1012);"></div>
+    <div class="graph sankey-canvas" id="sankeyContainer" role="region" aria-label="Stacked column Miller-Sankey flow visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg);"></div>
+    <div class="graph fishbone-canvas" id="fishboneContainer" role="region" aria-label="Ishikawa Fishbone cause-and-effect visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg);"></div>
+    <div class="graph wheel-canvas" id="wheelContainer" role="region" aria-label="Circular dependency wheel and chord visualizer" hidden style="position:absolute; inset:0; overflow:hidden; background:var(--bg);"></div>
     <div class="edgestyle" id="edgeChips"><span class="cap">Edges</span></div>
     <div class="filterbar" id="filterBar">
       <div class="filter-group" style="border-right:1px solid var(--panel2, #242b30); padding-right:8px; margin-right:4px;">
