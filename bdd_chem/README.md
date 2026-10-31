@@ -99,6 +99,11 @@ BDD Chem sits on the *executable end* of the spec-driven spectrum: it is a conve
 ### What stays distinct
 No tool above pairs a nested layout convention, an agent skill, and a closing-gate process into one **zero-dependency, tool-agnostic** package whose contracts are *executable*. Spec Kit/OpenSpec/Kiro write prose that doesn't run; the linters/guidelines have no process or agent glue. That gap is exactly where BDD Chem lives.
 
+## Future Architecture: Standalone Node CLI (`@bdd-chem/cli`)
+
+> [!NOTE]
+> An architectural decision has been made to migrate `bdd_chem` from vendored in-repo bash utilities into an independent, standalone Node.js / TypeScript CLI package (**Option B**). See [ROADMAP_CLI.md](./ROADMAP_CLI.md) for the design rationale, planned command surface (`npx bdd-chem`), and extraction plan.
+
 ## License
 
 Do what you want with it. The golems won't mind.
