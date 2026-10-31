@@ -35,14 +35,31 @@ class MockElement {
     this.listeners[event] = this.listeners[event].filter((f) => f !== fn);
   }
 
-  dispatchEvent(event: { type: string; target?: any }) {
+  public attributes: Record<string, string> = {};
+
+  setAttribute(attr: string, val: string) {
+    this.attributes[attr] = val;
+  }
+
+  getAttribute(attr: string): string | null {
+    return this.attributes[attr] || null;
+  }
+
+  private subElements = new Map<string, MockElement>();
+
+  dispatchEvent(event: { type: string; target?: any; preventDefault?: Function; stopPropagation?: Function; deltaY?: number; clientX?: number; clientY?: number }) {
     event.target = event.target || this;
     const list = this.listeners[event.type] || [];
     for (const fn of list) fn(event);
   }
 
   querySelector(sel: string): any {
-    return null;
+    if (!this.subElements.has(sel)) {
+      const el = new MockElement(sel.includes("svg") ? "svg" : "div");
+      (el as any).getBoundingClientRect = () => ({ left: 50, top: 50, width: 1000, height: 800 });
+      this.subElements.set(sel, el);
+    }
+    return this.subElements.get(sel);
   }
 
   querySelectorAll(sel: string): any[] {
@@ -273,4 +290,41 @@ test("WheelView controls depth, bundle toggle, and drilldown through UI methods"
   assert.equal(view.drilldownModule, "src/graph");
   assert.ok(mockContainer.innerHTML.includes("Zoom: <strong>src/graph</strong>"));
 });
+
+test("WheelView wheel event zooms anchored at cursor position instead of canvas origin", async () => {
+  const { WheelView } = await import("../viewer/wheel-view.js");
+
+  const mockContainer = new MockElement("div") as any;
+  const view = new WheelView(mockContainer);
+
+  const nodes = [
+    { id: "src/app.ts", name: "app.ts", type: "file" },
+  ];
+  view.setData(nodes, []);
+
+  assert.equal(view.zoom, 1.0);
+  assert.equal(view.panX, 0);
+  assert.equal(view.panY, 0);
+
+  const svg = mockContainer.querySelector(".wheel-svg");
+  assert.ok(svg, "Must find svg in mockContainer");
+
+  // Dispatch wheel event at clientX: 450, clientY: 350 (mx: 400, my: 300 relative to rect left:50, top:50)
+  svg.dispatchEvent({
+    type: "wheel",
+    deltaY: -100, // Zoom in
+    clientX: 450,
+    clientY: 350,
+    preventDefault: () => {},
+  });
+
+  // Zoom should have increased from 1.0 to 1.12
+  assert.equal(view.zoom, 1.12);
+  // PanX and PanY must have shifted to anchor zoom at cursor (400, 300)
+  // Expected: mx - ((mx - panX) / oldZoom) * newZoom = 400 - (400 / 1.0) * 1.12 = 400 - 448 = -48
+  assert.equal(view.panX, -48);
+  // Expected: my - ((my - panY) / oldZoom) * newZoom = 300 - (300 / 1.0) * 1.12 = 300 - 336 = -36
+  assert.equal(view.panY, -36);
+});
+
 

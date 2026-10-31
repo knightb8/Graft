@@ -673,26 +673,39 @@ export class WheelView {
 
     if (!svg) return;
 
-    // Pan & Zoom
-    svg.addEventListener("wheel", (e: any) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      this.zoom = Math.min(2.5, Math.max(0.4, this.zoom * zoomFactor));
-      this.render();
-    });
+    // Pan & Zoom (zooms smoothly anchored at the mouse cursor)
+    svg.addEventListener(
+      "wheel",
+      (e: any) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        const factor = (e.deltaY || 0) < 0 ? 1.12 : 0.88;
+        const nextZoom = Math.min(3.5, Math.max(0.35, Number((this.zoom * factor).toFixed(3))));
+        const rect = typeof svg.getBoundingClientRect === "function" ? svg.getBoundingClientRect() : { left: 0, top: 0 };
+        const mx = (e.clientX || 0) - rect.left;
+        const my = (e.clientY || 0) - rect.top;
+        this.panX = Math.round(mx - ((mx - this.panX) / this.zoom) * nextZoom);
+        this.panY = Math.round(my - ((my - this.panY) / this.zoom) * nextZoom);
+        this.zoom = nextZoom;
+        const stage = svg.querySelector<SVGGElement>(".wheel-stage");
+        if (stage) {
+          stage.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);
+        }
+      },
+      { passive: false } as any,
+    );
 
     svg.addEventListener("pointerdown", (e: any) => {
       if (e.target?.closest(".wheel-node") || e.target?.closest(".wheel-sector")) return;
       this.isDragging = true;
-      this.dragStartX = e.clientX - this.panX;
-      this.dragStartY = e.clientY - this.panY;
+      this.dragStartX = (e.clientX || 0) - this.panX;
+      this.dragStartY = (e.clientY || 0) - this.panY;
       svg.style.cursor = "grabbing";
     });
 
     svg.addEventListener("pointermove", (e: any) => {
       if (!this.isDragging) return;
-      this.panX = e.clientX - this.dragStartX;
-      this.panY = e.clientY - this.dragStartY;
+      this.panX = (e.clientX || 0) - this.dragStartX;
+      this.panY = (e.clientY || 0) - this.dragStartY;
       const stage = svg.querySelector<SVGGElement>(".wheel-stage");
       if (stage) {
         stage.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);
