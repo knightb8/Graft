@@ -17,6 +17,7 @@
 | **parsing** | **core** | 12 | `parsing/core/semantic_edges_refinement-12.feature` | Semantic Edge Refinements for Tripartite Architecture |
 | **viz** | **core** | 14 | `viz/core/archipelago_and_lod_labels-14.feature` | Visualizer Archipelago Blooms and Smart LOD Labels |
 | **viz** | **core** | 16 | `viz/core/bloom_rainbow_and_aggregation_toggles-16.feature` | Visualizer Bloom, Rainbow, and Parent Aggregation Toggles |
+| **viz** | **core** | 29 | `viz/core/circular_dependency_wheel-29.feature` | Circular Dependency Wheel (Chord Diagram) for Lifecycle Coupling |
 | **viz** | **core** | 22 | `viz/core/cosmos_gravity_presets_and_edge_bundling-22.feature` | Tunable Cosmos Gravity Presets, Support Sink Heuristics, and Hierarchical Edge Bundling |
 | **viz** | **core** | 23 | `viz/core/directional_blast_attenuation_and_sankey_subfolders-23.feature` | Directional Blast Attenuation, Causal Collider Zero-Decay Rules, and Sankey Suite Sub-Foldering |
 | **viz** | **core** | 27 | `viz/core/entity_event_system_and_columnar_stores-27.feature` | Entity Event System and Columnar TypedArray Stores |

@@ -6,7 +6,7 @@ import {
   loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT,
   colorToken, cvar, famOf, type VizGraph, type TripartiteScope, type ConcreteScope, matchNodeFilter,
   scopeOfNode, relationColor, clusterKeyOfNode, galaxyColorOfCluster, parentIdOfNode,
-  evaluateTriStateFilter, type EdgeContractionMode, COSMOS_PRESETS, SankeyView, FishboneView,
+  evaluateTriStateFilter, type EdgeContractionMode, COSMOS_PRESETS, SankeyView, FishboneView, WheelView,
 } from "./data.js";
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
@@ -14,7 +14,7 @@ import { renderOutline } from "./tree.js";
 import { TreePicker } from "./picker.js";
 
 type Tab = "context" | "code" | "outline";
-type CanvasBase = "galaxy" | "sankey" | "fishbone";
+type CanvasBase = "galaxy" | "sankey" | "fishbone" | "wheel";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const rootEl = document.documentElement;
@@ -41,6 +41,7 @@ function currentFilter() {
 const view = new GraphView(($("graphContainer") || $("graphSvg")) as HTMLElement);
 const sankeyView = new SankeyView($("sankeyContainer"));
 const fishboneView = new FishboneView($("fishboneContainer"));
+const wheelView = new WheelView($("wheelContainer"));
 
 const picker = new TreePicker(
   $("pickerTree"),
@@ -122,7 +123,9 @@ function renderChips(): void {
       if (view.autoRebounce) {
         view.rebounceVisible();
       }
-      if (state.canvasBase === "fishbone") {
+      if (state.canvasBase === "wheel") {
+        syncWheelView();
+      } else if (state.canvasBase === "fishbone") {
         syncFishboneView();
       } else if (state.canvasBase === "sankey") {
         syncSankeyView(false);
@@ -167,7 +170,9 @@ function renderLegend(): void {
       if (view.autoRebounce) {
         view.rebounceVisible();
       }
-      if (state.canvasBase === "fishbone") {
+      if (state.canvasBase === "wheel") {
+        syncWheelView();
+      } else if (state.canvasBase === "fishbone") {
         syncFishboneView();
       } else if (state.canvasBase === "sankey") {
         syncSankeyView(false);
@@ -251,6 +256,9 @@ function showDetail(id: string | null): void {
     if (state.tab === "outline") {
       showDetail(next);
       renderOutline($("tree"), state.code!, next, state.outlineOpen, showDetail, currentFilter());
+    } else if (state.canvasBase === "wheel") {
+      wheelView.selectNode(next);
+      showDetail(next);
     } else if (state.canvasBase === "fishbone") {
       fishboneView.selectNode(next);
       showDetail(next);
@@ -266,12 +274,14 @@ function showDetail(id: string | null): void {
 view.onSelect = (id) => {
   sankeyView.selectedId = id;
   fishboneView.setSelectedNode(id);
+  wheelView.selectedNodeId = id;
   showDetail(id);
 };
 
 sankeyView.onSelect = (id) => {
   view.selected = id;
   fishboneView.setSelectedNode(id);
+  wheelView.selectedNodeId = id;
   view.restyle();
   showDetail(id);
 };
@@ -279,6 +289,15 @@ sankeyView.onSelect = (id) => {
 fishboneView.onSelect = (id) => {
   view.selected = id;
   sankeyView.selectedId = id;
+  wheelView.selectedNodeId = id;
+  view.restyle();
+  showDetail(id);
+};
+
+wheelView.onSelect = (id) => {
+  view.selected = id;
+  sankeyView.selectedId = id;
+  fishboneView.setSelectedNode(id);
   view.restyle();
   showDetail(id);
 };
@@ -298,19 +317,32 @@ function syncFishboneView(): void {
   fishboneView.setData(g.nodes, g.edges, view.selected);
 }
 
+function syncWheelView(): void {
+  const g = activeGraph();
+  if (!g) return;
+  const visibleNodes = g.nodes.filter((n) => !view.hiddenTypes[n.type] && matchNodeFilter(n, currentFilter()) && (!view.triStateResult || view.triStateResult.visibleIds.has(n.id)));
+  const visSet = new Set(visibleNodes.map((n) => n.id));
+  const visibleEdges = g.edges.filter((e) => visSet.has(e.source) && visSet.has(e.target) && !view.hiddenRels[chipKey(e.relation)]);
+  wheelView.setData(visibleNodes, visibleEdges);
+  wheelView.selectedNodeId = view.selected;
+}
+
 function setCanvasBase(base: CanvasBase): void {
   state.canvasBase = base;
   const isGalaxy = base === "galaxy";
   const isSankey = base === "sankey";
   const isFishbone = base === "fishbone";
+  const isWheel = base === "wheel";
 
   const gEl = $("graphContainer");
   const sEl = $("sankeyContainer");
   const fEl = $("fishboneContainer");
+  const wEl = $("wheelContainer");
 
   const gBtn = $("baseGalaxyBtn");
   const sBtn = $("baseSankeyBtn");
   const fBtn = $("baseFishboneBtn");
+  const wBtn = $("baseWheelBtn");
 
   const galaxyGroup = $("galaxyViewGroup");
   const layoutGroup = $("layoutEngineGroup");
@@ -323,6 +355,7 @@ function setCanvasBase(base: CanvasBase): void {
   if (gEl) gEl.hidden = !isGalaxy;
   if (sEl) sEl.hidden = !isSankey;
   if (fEl) fEl.hidden = !isFishbone;
+  if (wEl) wEl.hidden = !isWheel;
 
   if (galaxyGroup) galaxyGroup.style.display = isGalaxy ? "" : "none";
   if (layoutGroup) layoutGroup.style.display = isGalaxy ? "" : "none";
@@ -353,8 +386,16 @@ function setCanvasBase(base: CanvasBase): void {
     fBtn.style.color = isFishbone ? "#0b0e11" : "";
     fBtn.style.fontWeight = isFishbone ? "600" : "";
   }
+  if (wBtn) {
+    wBtn.classList.toggle("active", isWheel);
+    wBtn.style.background = isWheel ? "var(--accent, #38bdf8)" : "";
+    wBtn.style.color = isWheel ? "#0b0e11" : "";
+    wBtn.style.fontWeight = isWheel ? "600" : "";
+  }
 
-  if (isFishbone) {
+  if (isWheel) {
+    syncWheelView();
+  } else if (isFishbone) {
     syncFishboneView();
   } else if (isSankey) {
     syncSankeyView(true);
@@ -366,6 +407,7 @@ function setCanvasBase(base: CanvasBase): void {
 $("baseGalaxyBtn")?.addEventListener("click", () => setCanvasBase("galaxy"));
 $("baseSankeyBtn")?.addEventListener("click", () => setCanvasBase("sankey"));
 $("baseFishboneBtn")?.addEventListener("click", () => setCanvasBase("fishbone"));
+$("baseWheelBtn")?.addEventListener("click", () => setCanvasBase("wheel"));
 
 /* ---------- tabs ---------- */
 function setTab(tab: Tab): void {
@@ -400,7 +442,9 @@ function setTab(tab: Tab): void {
       empty.hidden = true;
       view.setData(raw, graphTab());
       picker.setGraph(raw);
-      if (state.canvasBase === "fishbone") {
+      if (state.canvasBase === "wheel") {
+        syncWheelView();
+      } else if (state.canvasBase === "fishbone") {
         syncFishboneView();
       } else if (state.canvasBase === "sankey") {
         syncSankeyView(true);
@@ -449,7 +493,10 @@ search.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && view.query) {
     const hit = view.firstMatch();
     if (hit) {
-      if (state.canvasBase === "fishbone") {
+      if (state.canvasBase === "wheel") {
+        wheelView.selectNode(hit.id);
+        showDetail(hit.id);
+      } else if (state.canvasBase === "fishbone") {
         fishboneView.selectNode(hit.id);
         showDetail(hit.id);
       } else if (state.canvasBase === "sankey") {
@@ -501,7 +548,9 @@ function applyFilters(): void {
   if (view.autoRebounce) {
     view.rebounceVisible();
   }
-  if (state.canvasBase === "fishbone") {
+  if (state.canvasBase === "wheel") {
+    syncWheelView();
+  } else if (state.canvasBase === "fishbone") {
     syncFishboneView();
   } else if (state.canvasBase === "sankey") {
     syncSankeyView(false);
@@ -544,7 +593,9 @@ aggregateCb?.addEventListener("change", () => {
       view.restyle();
     }
   }
-  if (state.canvasBase === "fishbone") {
+  if (state.canvasBase === "wheel") {
+    syncWheelView();
+  } else if (state.canvasBase === "fishbone") {
     syncFishboneView();
   } else if (state.canvasBase === "sankey") {
     syncSankeyView(false);

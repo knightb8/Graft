@@ -51,6 +51,7 @@
     <div class="graph" id="graphContainer" role="region" aria-label="Interactive graph visualizer"></div>
     <div class="graph sankey-canvas" id="sankeyContainer" role="region" aria-label="Stacked column Miller-Sankey flow visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg, #0d1012);"></div>
     <div class="graph fishbone-canvas" id="fishboneContainer" role="region" aria-label="Ishikawa Fishbone cause-and-effect visualizer" hidden style="position:absolute; inset:0; overflow:auto; background:var(--bg, #0d1012);"></div>
+    <div class="graph wheel-canvas" id="wheelContainer" role="region" aria-label="Circular dependency wheel and chord visualizer" hidden style="position:absolute; inset:0; overflow:hidden; background:var(--bg, #0d1012);"></div>
     <div class="edgestyle" id="edgeChips"><span class="cap">Edges</span></div>
     <div class="filterbar" id="filterBar">
       <div class="filter-group" style="border-right:1px solid var(--panel2, #242b30); padding-right:8px; margin-right:4px;">
@@ -58,6 +59,7 @@
         <button type="button" class="ptool-btn active" id="baseGalaxyBtn" title="2D WebGL Galaxy & Cosmos Canvas" style="font-size:11px; padding:2px 8px; background:var(--accent, #38bdf8); color:#0b0e11; font-weight:600;">🌌 Galaxy</button>
         <button type="button" class="ptool-btn" id="baseSankeyBtn" title="5-Column Stacked Lifecycle Flow Chart (ADRs → Specs → Code → Tests → Docs)" style="font-size:11px; padding:2px 8px;">📊 Stacked Flow</button>
         <button type="button" class="ptool-btn" id="baseFishboneBtn" title="Ishikawa Fishbone Cause-and-Effect Diagram (Selected node as head on left)" style="font-size:11px; padding:2px 8px;">🐟 Fishbone</button>
+        <button type="button" class="ptool-btn" id="baseWheelBtn" title="Circular Dependency Wheel (Chord Diagram)" style="font-size:11px; padding:2px 8px;">🎡 Wheel</button>
       </div>
       <div class="filter-group" id="layoutEngineGroup" style="border-right:1px solid var(--panel2, #242b30); padding-right:8px; margin-right:4px;">
         <span class="cap">Layout</span>
