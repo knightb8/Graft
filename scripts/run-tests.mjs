@@ -41,9 +41,10 @@ if (files.length === 0) {
 // (git merges these over the user's config for this process tree only) so test
 // commits never sign, without touching anyone's global settings.
 const gitEnv = {
-  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_COUNT: "3",
   GIT_CONFIG_KEY_0: "commit.gpgsign", GIT_CONFIG_VALUE_0: "false",
   GIT_CONFIG_KEY_1: "tag.gpgsign", GIT_CONFIG_VALUE_1: "false",
+  GIT_CONFIG_KEY_2: "core.excludesFile", GIT_CONFIG_VALUE_2: "",
 };
 
 // A graft repo moves to trail when a session opens on a machine with the trail
