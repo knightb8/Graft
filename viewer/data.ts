@@ -72,6 +72,7 @@ export {
   computeSankeyColumns,
   SankeyView,
 } from "./sankey.js";
+export { FishboneView, computeFishboneModel, type FishboneModel, type FishboneRib } from "./fishbone-view.js";
 
 export interface VizNode {
   id: string;

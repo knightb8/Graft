@@ -6,7 +6,7 @@ import {
   loadContextGraph, loadCodeGraph, onServerChange, chipKey, CHIP_HINT,
   colorToken, cvar, famOf, type VizGraph, type TripartiteScope, type ConcreteScope, matchNodeFilter,
   scopeOfNode, relationColor, clusterKeyOfNode, galaxyColorOfCluster, parentIdOfNode,
-  evaluateTriStateFilter, type EdgeContractionMode, COSMOS_PRESETS, SankeyView,
+  evaluateTriStateFilter, type EdgeContractionMode, COSMOS_PRESETS, SankeyView, FishboneView,
 } from "./data.js";
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
@@ -14,7 +14,7 @@ import { renderOutline } from "./tree.js";
 import { TreePicker } from "./picker.js";
 
 type Tab = "context" | "code" | "outline";
-type CanvasBase = "galaxy" | "sankey";
+type CanvasBase = "galaxy" | "sankey" | "fishbone";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const rootEl = document.documentElement;
@@ -40,6 +40,7 @@ function currentFilter() {
 
 const view = new GraphView(($("graphContainer") || $("graphSvg")) as HTMLElement);
 const sankeyView = new SankeyView($("sankeyContainer"));
+const fishboneView = new FishboneView($("fishboneContainer"));
 
 const picker = new TreePicker(
   $("pickerTree"),
@@ -121,7 +122,9 @@ function renderChips(): void {
       if (view.autoRebounce) {
         view.rebounceVisible();
       }
-      if (state.canvasBase === "sankey") {
+      if (state.canvasBase === "fishbone") {
+        syncFishboneView();
+      } else if (state.canvasBase === "sankey") {
         syncSankeyView(false);
       }
       updateShownCount();
@@ -164,7 +167,9 @@ function renderLegend(): void {
       if (view.autoRebounce) {
         view.rebounceVisible();
       }
-      if (state.canvasBase === "sankey") {
+      if (state.canvasBase === "fishbone") {
+        syncFishboneView();
+      } else if (state.canvasBase === "sankey") {
         syncSankeyView(false);
       }
       updateShownCount();
@@ -246,6 +251,9 @@ function showDetail(id: string | null): void {
     if (state.tab === "outline") {
       showDetail(next);
       renderOutline($("tree"), state.code!, next, state.outlineOpen, showDetail, currentFilter());
+    } else if (state.canvasBase === "fishbone") {
+      fishboneView.selectNode(next);
+      showDetail(next);
     } else if (state.canvasBase === "sankey") {
       sankeyView.select(next);
       showDetail(next);
@@ -257,11 +265,20 @@ function showDetail(id: string | null): void {
 
 view.onSelect = (id) => {
   sankeyView.selectedId = id;
+  fishboneView.setSelectedNode(id);
   showDetail(id);
 };
 
 sankeyView.onSelect = (id) => {
   view.selected = id;
+  fishboneView.setSelectedNode(id);
+  view.restyle();
+  showDetail(id);
+};
+
+fishboneView.onSelect = (id) => {
+  view.selected = id;
+  sankeyView.selectedId = id;
   view.restyle();
   showDetail(id);
 };
@@ -275,13 +292,26 @@ function syncSankeyView(autoCollapse = false): void {
   sankeyView.setData(visibleNodes, visibleEdges, autoCollapse);
 }
 
+function syncFishboneView(): void {
+  const g = activeGraph();
+  if (!g) return;
+  fishboneView.setData(g.nodes, g.edges, view.selected);
+}
+
 function setCanvasBase(base: CanvasBase): void {
   state.canvasBase = base;
+  const isGalaxy = base === "galaxy";
   const isSankey = base === "sankey";
+  const isFishbone = base === "fishbone";
+
   const gEl = $("graphContainer");
   const sEl = $("sankeyContainer");
+  const fEl = $("fishboneContainer");
+
   const gBtn = $("baseGalaxyBtn");
   const sBtn = $("baseSankeyBtn");
+  const fBtn = $("baseFishboneBtn");
+
   const galaxyGroup = $("galaxyViewGroup");
   const layoutGroup = $("layoutEngineGroup");
   const zoomCtl = document.querySelector<HTMLElement>(".zoomctl");
@@ -290,24 +320,26 @@ function setCanvasBase(base: CanvasBase): void {
   const legend = document.querySelector<HTMLElement>(".legend");
   const lcount = document.querySelector<HTMLElement>(".lcount");
 
-  if (gEl) gEl.hidden = isSankey;
+  if (gEl) gEl.hidden = !isGalaxy;
   if (sEl) sEl.hidden = !isSankey;
-  if (galaxyGroup) galaxyGroup.style.display = isSankey ? "none" : "";
-  if (layoutGroup) layoutGroup.style.display = isSankey ? "none" : "";
-  if (zoomCtl) zoomCtl.style.display = isSankey ? "none" : "";
-  if (edgeChips) edgeChips.style.display = isSankey ? "none" : "";
-  if (legend) legend.style.display = isSankey ? "none" : "";
-  if (lcount) lcount.style.display = isSankey ? "none" : "";
+  if (fEl) fEl.hidden = !isFishbone;
+
+  if (galaxyGroup) galaxyGroup.style.display = isGalaxy ? "" : "none";
+  if (layoutGroup) layoutGroup.style.display = isGalaxy ? "" : "none";
+  if (zoomCtl) zoomCtl.style.display = isGalaxy ? "" : "none";
+  if (edgeChips) edgeChips.style.display = isGalaxy ? "" : "none";
+  if (legend) legend.style.display = isGalaxy ? "" : "none";
+  if (lcount) lcount.style.display = isGalaxy ? "" : "none";
 
   if (filterBar) {
     filterBar.style.top = isSankey ? "10px" : "44px";
   }
 
   if (gBtn) {
-    gBtn.classList.toggle("active", !isSankey);
-    gBtn.style.background = !isSankey ? "var(--accent, #38bdf8)" : "";
-    gBtn.style.color = !isSankey ? "#0b0e11" : "";
-    gBtn.style.fontWeight = !isSankey ? "600" : "";
+    gBtn.classList.toggle("active", isGalaxy);
+    gBtn.style.background = isGalaxy ? "var(--accent, #38bdf8)" : "";
+    gBtn.style.color = isGalaxy ? "#0b0e11" : "";
+    gBtn.style.fontWeight = isGalaxy ? "600" : "";
   }
   if (sBtn) {
     sBtn.classList.toggle("active", isSankey);
@@ -315,8 +347,16 @@ function setCanvasBase(base: CanvasBase): void {
     sBtn.style.color = isSankey ? "#0b0e11" : "";
     sBtn.style.fontWeight = isSankey ? "600" : "";
   }
+  if (fBtn) {
+    fBtn.classList.toggle("active", isFishbone);
+    fBtn.style.background = isFishbone ? "var(--accent, #38bdf8)" : "";
+    fBtn.style.color = isFishbone ? "#0b0e11" : "";
+    fBtn.style.fontWeight = isFishbone ? "600" : "";
+  }
 
-  if (isSankey) {
+  if (isFishbone) {
+    syncFishboneView();
+  } else if (isSankey) {
     syncSankeyView(true);
   } else {
     view.reheat();
@@ -325,6 +365,7 @@ function setCanvasBase(base: CanvasBase): void {
 
 $("baseGalaxyBtn")?.addEventListener("click", () => setCanvasBase("galaxy"));
 $("baseSankeyBtn")?.addEventListener("click", () => setCanvasBase("sankey"));
+$("baseFishboneBtn")?.addEventListener("click", () => setCanvasBase("fishbone"));
 
 /* ---------- tabs ---------- */
 function setTab(tab: Tab): void {
@@ -359,7 +400,9 @@ function setTab(tab: Tab): void {
       empty.hidden = true;
       view.setData(raw, graphTab());
       picker.setGraph(raw);
-      if (state.canvasBase === "sankey") {
+      if (state.canvasBase === "fishbone") {
+        syncFishboneView();
+      } else if (state.canvasBase === "sankey") {
         syncSankeyView(true);
       }
       if (typeof requestAnimationFrame !== "undefined") {
@@ -406,7 +449,10 @@ search.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && view.query) {
     const hit = view.firstMatch();
     if (hit) {
-      if (state.canvasBase === "sankey") {
+      if (state.canvasBase === "fishbone") {
+        fishboneView.selectNode(hit.id);
+        showDetail(hit.id);
+      } else if (state.canvasBase === "sankey") {
         sankeyView.select(hit.id);
         showDetail(hit.id);
       } else {
@@ -455,7 +501,9 @@ function applyFilters(): void {
   if (view.autoRebounce) {
     view.rebounceVisible();
   }
-  if (state.canvasBase === "sankey") {
+  if (state.canvasBase === "fishbone") {
+    syncFishboneView();
+  } else if (state.canvasBase === "sankey") {
     syncSankeyView(false);
   }
   renderChips();
@@ -496,7 +544,9 @@ aggregateCb?.addEventListener("change", () => {
       view.restyle();
     }
   }
-  if (state.canvasBase === "sankey") {
+  if (state.canvasBase === "fishbone") {
+    syncFishboneView();
+  } else if (state.canvasBase === "sankey") {
     syncSankeyView(false);
   }
   renderChips();

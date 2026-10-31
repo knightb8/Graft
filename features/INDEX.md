@@ -25,6 +25,7 @@
 | **viz** | **core** | 18 | `viz/core/hierarchical_tree_backbone_and_curved_edges-18.feature` | Hierarchical Tree-Backbone Layout and Curved WebGL Edges |
 | **viz** | **core** | 19 | `viz/core/hybrid_miller_sankey_and_tristate_filters-19.feature` | Hybrid Miller-Sankey Explorer and Tri-State Cascading Tree Filters |
 | **viz** | **core** | 21 | `viz/core/interactive_physics_and_visual_parity-21.feature` | Interactive Bouncy Drag Physics and Original Visualizer Parity |
+| **viz** | **core** | 28 | `viz/core/ishikawa_fishbone_diagram-28.feature` | Ishikawa Fishbone Cause-and-Effect Diagram for Focused Tripartite Lineage |
 | **viz** | **core** | 24 | `viz/core/relation_registry_and_degree_normalization-24.feature` | Unified Relation Registry and Degree-Normalized Edge Weights |
 | **viz** | **core** | 13 | `viz/core/sigma_webgl_migration-13.feature` | Sigma.js WebGL Graph Visualizer |
 | **viz** | **core** | 26 | `viz/core/stacked_flow_hierarchical_drilldown-26.feature` | Hierarchical Drill-Down and Crossing-Minimized Ordering in Stacked Flow Columns |
