@@ -846,21 +846,25 @@ export class SankeyView {
         const dirOrNodeKey = b.isGroup && b.id.startsWith("dir:") ? b.id.split(":").slice(2).join(":") : b.id;
         const isExpanded = this.isFolderExpanded(dirOrNodeKey);
 
-        svgColumns += `<g class="sankey-bar" data-bar-id="${this.esc(b.id)}" data-dir-key="${this.esc(dirOrNodeKey)}" data-stage="${col.stage}" data-is-group="${b.isGroup ? "1" : "0"}" data-first-node="${this.esc(b.memberIds[0] || "")}" transform="translate(${b.x}, ${b.y})" style="cursor:grab;" opacity="${fillOpacity}">`;
-        svgColumns += `<rect x="0" y="0" width="${b.w}" height="${b.h}" rx="5" fill="${isSeed ? `${meta.color}33` : "var(--panel, #181c20)"}" stroke="${strokeColor}" stroke-width="${strokeW}"${glowAttr}/>`;
-        svgColumns += `<rect x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "#fde047" : meta.color}"/>`;
+        const chevronHitW = 24;
+        svgColumns += `<g class="sankey-bar" data-bar-id="${this.esc(b.id)}" data-dir-key="${this.esc(dirOrNodeKey)}" data-stage="${col.stage}" data-is-group="${b.isGroup ? "1" : "0"}" data-first-node="${this.esc(b.memberIds[0] || "")}" transform="translate(${b.x}, ${b.y})" opacity="${fillOpacity}">`;
+        svgColumns += `<rect class="sankey-bar-bg" x="0" y="0" width="${b.w}" height="${b.h}" rx="5" fill="${isSeed ? `${meta.color}33` : "var(--panel, #181c20)"}" stroke="${strokeColor}" stroke-width="${strokeW}"${glowAttr}/>`;
+        svgColumns += `<rect class="sankey-bar-stripe" x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "#fde047" : meta.color}"/>`;
 
         if (b.isGroup) {
-          svgColumns += `<text class="sankey-chevron" data-bar-id="${this.esc(b.id)}" x="9" y="${Math.min(b.h / 2 + 4, 18)}" fill="${meta.color}" font-size="10" font-weight="700" style="cursor:pointer;">${isExpanded ? "▾" : "▸"}</text>`;
-          svgColumns += `<text x="21" y="${Math.min(b.h / 2 + 4, 18)}" fill="${isSeed ? "#ffffff" : "var(--ink, #e7e9ea)"}" font-size="11" font-weight="700">${this.esc(shortLabel)}</text>`;
+          svgColumns += `<g class="sankey-chevron-hit" data-bar-id="${this.esc(b.id)}" title="${isExpanded ? "Collapse folder" : "Expand folder"}">`;
+          svgColumns += `<rect x="2" y="2" width="${chevronHitW}" height="${Math.max(14, b.h - 4)}" rx="3" fill="transparent"/>`;
+          svgColumns += `<text class="sankey-chevron" data-bar-id="${this.esc(b.id)}" x="10" y="${Math.min(b.h / 2 + 4, 18)}" fill="${meta.color}" font-size="11" font-weight="700">${isExpanded ? "▾" : "▸"}</text>`;
+          svgColumns += `</g>`;
+          svgColumns += `<text x="${chevronHitW + 4}" y="${Math.min(b.h / 2 + 4, 18)}" fill="${isSeed ? "#ffffff" : "var(--ink, #e7e9ea)"}" font-size="11" font-weight="700">${this.esc(shortLabel)}</text>`;
         } else {
           svgColumns += `<text x="11" y="${Math.min(b.h / 2 + 4, 18)}" fill="${isSeed ? "#ffffff" : "var(--ink, #e7e9ea)"}" font-size="11" font-weight="${isSeed ? "700" : isAffected ? "600" : "400"}">${this.esc(shortLabel)}</text>`;
         }
 
         if (badgeText) {
-          svgColumns += `<text x="${b.w - 8}" y="${Math.min(b.h / 2 + 4, 18)}" text-anchor="end" fill="${badgeColor}" font-size="9.5" font-weight="700">${this.esc(badgeText)}</text>`;
+          svgColumns += `<text class="sankey-bar-badge" x="${b.w - 8}" y="${Math.min(b.h / 2 + 4, 18)}" text-anchor="end" fill="${badgeColor}" font-size="9.5" font-weight="700">${this.esc(badgeText)}</text>`;
         }
-        svgColumns += `<title>${this.esc(b.label)} (${b.memberCount} node${b.memberCount === 1 ? "" : "s"}${isAffected ? ` · Hop ${b.minHop} · Blast Energy ${Math.round(b.maxEnergy * 100)}%` : ""}${b.hasGap ? " — GAP: 0 linked tests/docs" : ""})\n• Click: Select & trace lineage blast\n• Right-click or Ctrl+click: Open menu (expand, collapse, hide)\n• Chevron ▸/▾ or Double-click: Toggle folder expansion\n• Drag: Move bar</title>`;
+        svgColumns += `<title>${this.esc(b.label)} (${b.memberCount} node${b.memberCount === 1 ? "" : "s"}${isAffected ? ` · Hop ${b.minHop} · Blast Energy ${Math.round(b.maxEnergy * 100)}%` : ""}${b.hasGap ? " — GAP: 0 linked tests/docs" : ""})\n• Click anywhere on bubble: Select & trace lineage blast\n• Right-click or Ctrl+click: Open menu (expand, collapse, hide)\n• Chevron ▸/▾ or Double-click: Toggle folder expansion\n• Drag: Move bubble</title>`;
         svgColumns += `</g>`;
       }
       svgColumns += `</g>`;
@@ -870,6 +874,44 @@ export class SankeyView {
 
     this.container.innerHTML = `
       <div class="sankey-root" style="display:flex; flex-direction:column; width:100%; height:100%; overflow:hidden; position:relative;">
+        <style>
+          .sankey-bar {
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            transition: opacity 0.12s ease;
+          }
+          .sankey-bar rect.sankey-bar-bg {
+            transition: fill 0.12s ease, stroke 0.12s ease, stroke-width 0.12s ease;
+          }
+          .sankey-bar:hover {
+            opacity: 1 !important;
+          }
+          .sankey-bar:hover rect.sankey-bar-bg {
+            fill: var(--panel2, #232930);
+            stroke: var(--accent, #38bdf8);
+            stroke-width: 1.6px;
+          }
+          .sankey-bar.is-dragging {
+            cursor: grabbing !important;
+          }
+          .sankey-bar text {
+            pointer-events: none;
+            user-select: none;
+            -webkit-user-select: none;
+          }
+          .sankey-chevron-hit {
+            cursor: pointer;
+            pointer-events: all;
+          }
+          .sankey-chevron-hit rect {
+            fill: transparent;
+            transition: fill 0.12s ease;
+          }
+          .sankey-chevron-hit:hover rect {
+            fill: rgba(255, 255, 255, 0.16);
+          }
+        </style>
         <div class="sankey-toolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:7px; padding:6px 12px; margin:10px 14px 4px 14px; font-size:11px; color:var(--ink, #e7e9ea); z-index:2; flex-shrink:0;">
           <span style="font-weight:600; color:var(--accent, #38bdf8);">Stacked Lifecycle Flow</span>
           <button type="button" class="ptool-btn" id="sankeyGroupFolders" title="Roll up files & test suites into directory/domain bars">${collapsedCount > 0 ? `📁 Folders Grouped (${collapsedCount})` : "📁 Group by Folder"}</button>
@@ -890,7 +932,7 @@ export class SankeyView {
           </label>
           ${hasCustomLayout ? `<button type="button" class="ptool-btn" id="sankeyResetLayout" title="Reset dragged bars, columns, and pan/zoom">↺ Reset Layout</button>` : ""}
           ${focusSeeds ? `<button type="button" class="ptool-btn" id="sankeyClearTrace" style="color:#fde047; font-weight:600;">✕ Clear Blast Trace</button>` : ""}
-          <span style="color:var(--muted, #8b9298); font-size:10px; margin-left:auto;">💡 Click bar: Blast Trace · Dbl-click / ▸: Expand · Right-click: Hide · Drag: Move</span>
+          <span style="color:var(--muted, #8b9298); font-size:10px; margin-left:auto;">💡 Click bubble: Blast Trace · Dbl-click / ▸: Expand · Right-click: Hide · Drag: Move</span>
         </div>
         <div class="sankey-canvas-wrap" style="flex:1; width:100%; height:100%; overflow:auto; position:relative;">
           <svg class="sankey-svg" width="${W}" height="${totalSvgH}" viewBox="0 0 ${W} ${totalSvgH}" style="min-width:${W}px; min-height:${totalSvgH}px; overflow:visible; display:block; user-select:none; cursor:grab;">
@@ -965,8 +1007,11 @@ export class SankeyView {
     const viewportEl = this.container.querySelector<SVGGElement>(".sankey-viewport");
 
     // Chevron hit-area click handler
-    this.container.querySelectorAll<SVGTextElement>(".sankey-chevron").forEach((chEl) => {
-      chEl.addEventListener("click", (ev: MouseEvent) => {
+    this.container.querySelectorAll<SVGGElement | SVGTextElement>(".sankey-chevron-hit, .sankey-chevron").forEach((chEl) => {
+      chEl.addEventListener("pointerdown", (ev: Event) => {
+        ev.stopPropagation();
+      });
+      chEl.addEventListener("click", (ev: Event) => {
         ev.stopPropagation();
         ev.preventDefault();
         const barId = chEl.getAttribute("data-bar-id") || "";
@@ -1018,7 +1063,6 @@ export class SankeyView {
         const curOff = this.barOffsets.get(barId) ?? { dx: 0, dy: 0 };
         startOffX = curOff.dx;
         startOffY = curOff.dy;
-        el.style.cursor = "grabbing";
         el.parentElement?.appendChild(el);
         try {
           el.setPointerCapture(ev.pointerId);
@@ -1032,8 +1076,13 @@ export class SankeyView {
         ev.stopPropagation();
         const rawDx = ev.clientX - startClientX;
         const rawDy = ev.clientY - startClientY;
-        if (Math.hypot(rawDx, rawDy) > 3) {
-          moved = true;
+        if (!moved) {
+          if (Math.hypot(rawDx, rawDy) > 8) {
+            moved = true;
+            el.classList.add("is-dragging");
+          } else {
+            return;
+          }
         }
         const dx = rawDx / this.zoom;
         const dy = rawDy / this.zoom;
@@ -1051,7 +1100,7 @@ export class SankeyView {
         if (!dragging) return;
         ev.stopPropagation();
         dragging = false;
-        el.style.cursor = "grab";
+        el.classList.remove("is-dragging");
         try {
           el.releasePointerCapture(ev.pointerId);
         } catch {
