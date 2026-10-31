@@ -36,3 +36,4 @@
 | **viz** | **core** | 25 | `viz/core/two_level_stress_layout_and_preset_constraints-25.feature` | Two-Level Stress-SGD Organic Layout with Preset Constraints |
 | **viz** | **core** | 10 | `viz/core/viz_filter-10.feature` | Scope and Directory Filtering in Visualizer |
 | **viz** | **core** | 20 | `viz/core/wasm_typedarray_galaxy_acceleration-20.feature` | WASM and TypedArray Vectorized Galaxy Physics and Zero-Allocation Rendering |
+| **viz** | **core** | 31 | `viz/core/wheel_granularity_drilldown_and_edge_bundling-31.feature` | Circular Dependency Wheel Granularity Depths, In-Place Drill-Down, and Hierarchical Edge Bundling |

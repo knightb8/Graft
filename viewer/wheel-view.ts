@@ -1,6 +1,7 @@
 import { classifyArtifactStage, type ArtifactStage } from "./sankey-engine.js";
 
 export type WheelStage = ArtifactStage;
+export type WheelDepth = "module" | "file" | "symbol";
 
 export interface WheelNode {
   id: string;
@@ -13,6 +14,11 @@ export interface WheelNode {
   y?: number;
   labelX?: number;
   labelY?: number;
+  childCount?: number;
+  memberIds?: string[];
+  isModule?: boolean;
+  moduleKey?: string;
+  isDrilldownChild?: boolean;
 }
 
 export interface WheelSector {
@@ -31,6 +37,8 @@ export interface WheelChord {
   targetNode: WheelNode;
   relation: string;
   color: string;
+  weight: number;
+  bundled: boolean;
   x1: number;
   y1: number;
   x2: number;
@@ -45,6 +53,9 @@ export interface WheelModel {
   cy: number;
   innerRadius: number;
   outerRadius: number;
+  depth: WheelDepth;
+  drilldownModule: string | null;
+  bundleChords: boolean;
   sectors: WheelSector[];
   chords: WheelChord[];
 }
@@ -64,7 +75,7 @@ const RELATION_COLORS: Record<string, string> = {
   association: "#ec4899",
 };
 
-function relationFamilyColor(rel?: string): string {
+export function relationFamilyColor(rel?: string): string {
   if (!rel) return "#94a3b8";
   const r = rel.toLowerCase();
   if (r === "part_of" || r === "contains") return RELATION_COLORS.structure;
@@ -73,23 +84,161 @@ function relationFamilyColor(rel?: string): string {
   return RELATION_COLORS.dependency;
 }
 
+export function moduleKeyOfNode(n: { id: string; sources?: string[] }): string {
+  const raw = n.sources?.[0]?.split(" · ")[0]?.trim() || n.id.split("#")[0] || n.id;
+  const parts = raw.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length <= 1) return parts[0] || n.id;
+  if (parts[0] === "src" || parts[0] === "features" || parts[0] === "docs" || parts[0] === "test") {
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : parts[0];
+  }
+  return parts.slice(0, 2).join("/");
+}
+
+export function fileKeyOfNode(n: { id: string; sources?: string[] }): string {
+  return n.sources?.[0]?.split(" · ")[0]?.trim() || n.id.split("#")[0] || n.id;
+}
+
 /**
  * Computes the circular chord dependency wheel model.
- * Partitions circumference into 5 Tripartite sectors with smooth quadratic Bézier chords.
+ * Partitions circumference into 5 Tripartite sectors with smooth Bézier chords.
+ * Supports Module, File, and Symbol depths, in-place arc drill-down, and Hierarchical Edge Bundling.
  */
 export function computeWheelModel(
   nodes: Array<{ id: string; name?: string; type?: string; sources?: string[] }>,
   edges: Array<{ source: string; target: string; relation?: string }>,
-  options: { width?: number; height?: number } = {},
+  options: {
+    width?: number;
+    height?: number;
+    depth?: WheelDepth;
+    drilldownModule?: string | null;
+    bundleChords?: boolean;
+  } = {},
 ): WheelModel {
   const width = Math.max(800, options.width || 1000);
   const height = Math.max(600, options.height || 800);
+  const depth: WheelDepth = options.depth || "file";
+  const drilldownModule = options.drilldownModule || null;
+  const bundleChords = options.bundleChords !== false;
+
   const cx = Math.round(width / 2);
   const cy = Math.round(height / 2);
 
   const outerRadius = Math.max(180, Math.min(cx, cy) - 80);
   const innerRadius = outerRadius - 20;
 
+  // 1. Group / aggregate nodes according to chosen depth
+  const symbolToDisplayedId = new Map<string, string>();
+  const displayedNodes: WheelNode[] = [];
+
+  if (depth === "symbol") {
+    for (const n of nodes) {
+      const st = classifyArtifactStage(n);
+      const wNode: WheelNode = { ...n, stage: st, memberIds: [n.id] };
+      symbolToDisplayedId.set(n.id, n.id);
+      displayedNodes.push(wNode);
+    }
+  } else if (depth === "file") {
+    const fileGroups = new Map<string, Array<{ id: string; name?: string; type?: string; sources?: string[] }>>();
+    for (const n of nodes) {
+      const fKey = fileKeyOfNode(n);
+      let group = fileGroups.get(fKey);
+      if (!group) {
+        group = [];
+        fileGroups.set(fKey, group);
+      }
+      group.push(n);
+    }
+
+    for (const [fKey, members] of fileGroups) {
+      const rep = members.find((m) => m.id === fKey) || members[0];
+      const st = classifyArtifactStage(rep);
+      const fileName = fKey.replace(/\\/g, "/").split("/").pop() || fKey;
+      const wNode: WheelNode = {
+        id: fKey,
+        name: fileName,
+        type: "file",
+        sources: [fKey],
+        stage: st,
+        childCount: members.length,
+        memberIds: members.map((m) => m.id),
+      };
+      displayedNodes.push(wNode);
+      for (const m of members) {
+        symbolToDisplayedId.set(m.id, fKey);
+      }
+    }
+  } else {
+    // depth === "module"
+    const modGroups = new Map<string, Array<{ id: string; name?: string; type?: string; sources?: string[] }>>();
+    for (const n of nodes) {
+      const mKey = moduleKeyOfNode(n);
+      let group = modGroups.get(mKey);
+      if (!group) {
+        group = [];
+        modGroups.set(mKey, group);
+      }
+      group.push(n);
+    }
+
+    for (const [mKey, members] of modGroups) {
+      const rep = members[0];
+      const st = classifyArtifactStage(rep);
+
+      if (drilldownModule === mKey) {
+        // Drilled-down module: expand into child files inside this module
+        const subFiles = new Map<string, Array<{ id: string; name?: string; type?: string; sources?: string[] }>>();
+        for (const m of members) {
+          const fKey = fileKeyOfNode(m);
+          let fg = subFiles.get(fKey);
+          if (!fg) {
+            fg = [];
+            subFiles.set(fKey, fg);
+          }
+          fg.push(m);
+        }
+
+        for (const [fKey, fMembers] of subFiles) {
+          const fRep = fMembers.find((m) => m.id === fKey) || fMembers[0];
+          const fileName = fKey.replace(/\\/g, "/").split("/").pop() || fKey;
+          const wNode: WheelNode = {
+            id: fKey,
+            name: `${mKey}/${fileName}`,
+            type: "file",
+            sources: [fKey],
+            stage: st,
+            childCount: fMembers.length,
+            memberIds: fMembers.map((m) => m.id),
+            isDrilldownChild: true,
+            moduleKey: mKey,
+          };
+          displayedNodes.push(wNode);
+          for (const m of fMembers) {
+            symbolToDisplayedId.set(m.id, fKey);
+          }
+        }
+      } else {
+        // Macro module node
+        const modId = `mod:${mKey}`;
+        const wNode: WheelNode = {
+          id: modId,
+          name: mKey,
+          type: "module",
+          sources: [mKey],
+          stage: st,
+          childCount: members.length,
+          memberIds: members.map((m) => m.id),
+          isModule: true,
+          moduleKey: mKey,
+        };
+        displayedNodes.push(wNode);
+        for (const m of members) {
+          symbolToDisplayedId.set(m.id, modId);
+        }
+      }
+    }
+  }
+
+  // 2. Partition into 5 Tripartite sectors
   const stageBuckets: Record<WheelStage, WheelNode[]> = {
     adrs: [],
     features: [],
@@ -99,11 +248,10 @@ export function computeWheelModel(
   };
 
   const nodeMap = new Map<string, WheelNode>();
-  for (const n of nodes) {
-    const st = classifyArtifactStage(n);
-    const wNode: WheelNode = { ...n, stage: st };
-    nodeMap.set(n.id, wNode);
+  for (const wNode of displayedNodes) {
+    const st = wNode.stage || "code";
     stageBuckets[st].push(wNode);
+    nodeMap.set(wNode.id, wNode);
   }
 
   const stageOrder: WheelStage[] = ["adrs", "features", "code", "tests", "docs"];
@@ -111,7 +259,7 @@ export function computeWheelModel(
   const totalGap = sectorGap * stageOrder.length;
   const availableAngle = 2 * Math.PI - totalGap;
 
-  const totalNodeCount = Math.max(1, nodes.length);
+  const totalNodeCount = Math.max(1, displayedNodes.length);
   const sectors: WheelSector[] = [];
   let currentAngle = -Math.PI / 2; // Start at 12 o'clock
 
@@ -119,7 +267,10 @@ export function computeWheelModel(
     const bucket = stageBuckets[stage];
     const meta = STAGE_CONFIG[stage];
     const weightFraction = Math.max(0.12, bucket.length / totalNodeCount);
-    const sectorAngle = (weightFraction / stageOrder.reduce((acc, st) => acc + Math.max(0.12, stageBuckets[st].length / totalNodeCount), 0)) * availableAngle;
+    const sectorAngle =
+      (weightFraction /
+        stageOrder.reduce((acc, st) => acc + Math.max(0.12, stageBuckets[st].length / totalNodeCount), 0)) *
+      availableAngle;
 
     const startAngle = currentAngle;
     const endAngle = startAngle + sectorAngle;
@@ -162,32 +313,83 @@ export function computeWheelModel(
     });
   }
 
-  // Generate interior Bézier chords for all connected edges
+  // 3. Aggregate inter-node chords
+  interface AggregatedChordEntry {
+    sourceId: string;
+    targetId: string;
+    relation: string;
+    weight: number;
+  }
+  const chordAggMap = new Map<string, AggregatedChordEntry>();
+
+  for (const e of edges) {
+    const sId = symbolToDisplayedId.get(e.source) || e.source;
+    const tId = symbolToDisplayedId.get(e.target) || e.target;
+    if (!sId || !tId || sId === tId) continue;
+
+    const key = `${sId}->${tId}:${e.relation || "uses"}`;
+    const existing = chordAggMap.get(key);
+    if (existing) {
+      existing.weight += 1;
+    } else {
+      chordAggMap.set(key, {
+        sourceId: sId,
+        targetId: tId,
+        relation: e.relation || "uses",
+        weight: 1,
+      });
+    }
+  }
+
+  // 4. Generate chords with optional Hierarchical Edge Bundling
   const chords: WheelChord[] = [];
   let chordIdx = 0;
 
-  for (const e of edges) {
-    const sNode = nodeMap.get(e.source);
-    const tNode = nodeMap.get(e.target);
+  for (const entry of chordAggMap.values()) {
+    const sNode = nodeMap.get(entry.sourceId);
+    const tNode = nodeMap.get(entry.targetId);
     if (!sNode || !tNode || sNode === tNode) continue;
-    if (sNode.x === undefined || sNode.y === undefined || tNode.x === undefined || tNode.y === undefined) continue;
+    if (
+      sNode.x === undefined ||
+      sNode.y === undefined ||
+      sNode.angle === undefined ||
+      tNode.x === undefined ||
+      tNode.y === undefined ||
+      tNode.angle === undefined
+    ) {
+      continue;
+    }
 
-    // Control point pulled toward center origin (cx, cy)
     const midX = (sNode.x + tNode.x) / 2;
     const midY = (sNode.y + tNode.y) / 2;
     const pullTension = 0.32;
     const cpx = Math.round(cx + (midX - cx) * pullTension);
     const cpy = Math.round(cy + (midY - cy) * pullTension);
 
-    const pathD = `M ${sNode.x},${sNode.y} Q ${cpx},${cpy} ${tNode.x},${tNode.y}`;
-    const color = relationFamilyColor(e.relation);
+    let pathD = "";
+    if (bundleChords) {
+      // Hierarchical Edge Bundling: route through shared radial corridor waypoints
+      const bundleFactor = 0.55;
+      const cp1x = Math.round(cx + innerRadius * bundleFactor * Math.cos(sNode.angle));
+      const cp1y = Math.round(cy + innerRadius * bundleFactor * Math.sin(sNode.angle));
+      const cp2x = Math.round(cx + innerRadius * bundleFactor * Math.cos(tNode.angle));
+      const cp2y = Math.round(cy + innerRadius * bundleFactor * Math.sin(tNode.angle));
+      pathD = `M ${sNode.x},${sNode.y} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${tNode.x},${tNode.y}`;
+    } else {
+      // Direct Quadratic Bézier
+      pathD = `M ${sNode.x},${sNode.y} Q ${cpx},${cpy} ${tNode.x},${tNode.y}`;
+    }
+
+    const color = relationFamilyColor(entry.relation);
 
     chords.push({
       id: `chord_${chordIdx++}`,
       sourceNode: sNode,
       targetNode: tNode,
-      relation: e.relation || "uses",
+      relation: entry.relation,
       color,
+      weight: entry.weight,
+      bundled: bundleChords,
       x1: sNode.x,
       y1: sNode.y,
       x2: tNode.x,
@@ -203,6 +405,9 @@ export function computeWheelModel(
     cy,
     innerRadius,
     outerRadius,
+    depth,
+    drilldownModule,
+    bundleChords,
     sectors,
     chords,
   };
@@ -217,6 +422,9 @@ export class WheelView {
   private edges: Array<{ source: string; target: string; relation?: string }> = [];
   public selectedNodeId: string | null = null;
   public hoveredNodeId: string | null = null;
+  public depth: WheelDepth = "file";
+  public drilldownModule: string | null = null;
+  public bundleChords = true;
   public onSelect: (id: string | null) => void = () => {};
 
   public panX = 0;
@@ -240,6 +448,23 @@ export class WheelView {
     this.render();
   }
 
+  setDepth(depth: WheelDepth): void {
+    if (this.depth === depth) return;
+    this.depth = depth;
+    this.drilldownModule = null;
+    this.render();
+  }
+
+  toggleBundle(): void {
+    this.bundleChords = !this.bundleChords;
+    this.render();
+  }
+
+  setDrilldown(moduleKey: string | null): void {
+    this.drilldownModule = moduleKey;
+    this.render();
+  }
+
   selectNode(id: string | null): void {
     this.selectedNodeId = id;
     this.onSelect(id);
@@ -250,6 +475,7 @@ export class WheelView {
     this.panX = 0;
     this.panY = 0;
     this.zoom = 1.0;
+    this.drilldownModule = null;
     this.render();
   }
 
@@ -268,14 +494,42 @@ export class WheelView {
       return;
     }
 
-    const model = computeWheelModel(this.nodes, this.edges, { width: w, height: h });
+    const model = computeWheelModel(this.nodes, this.edges, {
+      width: w,
+      height: h,
+      depth: this.depth,
+      drilldownModule: this.drilldownModule,
+      bundleChords: this.bundleChords,
+    });
+
     const activeId = this.hoveredNodeId || this.selectedNodeId;
 
     let html = `
       <div class="wheel-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg, #0d1012);">
-        <div class="wheel-toolbar" style="position:absolute; top:12px; right:16px; z-index:10; display:flex; gap:8px;">
-          ${activeId ? `<button type="button" class="ptool-btn" id="wheelClearBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:#fde047; border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">✕ Clear Focus</button>` : ""}
-          <button type="button" class="ptool-btn" id="wheelResetBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:var(--ink, #e7e9ea); border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">↺ Reset View</button>
+        <div class="wheel-toolbar" style="position:absolute; top:12px; left:16px; right:16px; z-index:10; display:flex; justify-content:space-between; align-items:center; pointer-events:none;">
+          <div style="display:flex; gap:8px; align-items:center; pointer-events:auto;">
+            <div class="ptool-group" style="display:flex; align-items:center; gap:2px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:6px; padding:2px 4px;">
+              <span style="font-size:10px; color:var(--muted, #8b9298); padding:0 4px; text-transform:uppercase; font-weight:700;">Depth</span>
+              <button type="button" class="ptool-btn ${this.depth === "module" ? "active" : ""}" id="wheelDepthModule" style="font-size:11px; padding:2px 7px; border:none; border-radius:4px; cursor:pointer; background:${this.depth === "module" ? "var(--accent, #38bdf8)" : "transparent"}; color:${this.depth === "module" ? "#0b0e11" : "var(--ink, #e7e9ea)"}; font-weight:${this.depth === "module" ? "600" : "normal"};">📦 Module</button>
+              <button type="button" class="ptool-btn ${this.depth === "file" ? "active" : ""}" id="wheelDepthFile" style="font-size:11px; padding:2px 7px; border:none; border-radius:4px; cursor:pointer; background:${this.depth === "file" ? "var(--accent, #38bdf8)" : "transparent"}; color:${this.depth === "file" ? "#0b0e11" : "var(--ink, #e7e9ea)"}; font-weight:${this.depth === "file" ? "600" : "normal"};">📄 File</button>
+              <button type="button" class="ptool-btn ${this.depth === "symbol" ? "active" : ""}" id="wheelDepthSymbol" style="font-size:11px; padding:2px 7px; border:none; border-radius:4px; cursor:pointer; background:${this.depth === "symbol" ? "var(--accent, #38bdf8)" : "transparent"}; color:${this.depth === "symbol" ? "#0b0e11" : "var(--ink, #e7e9ea)"}; font-weight:${this.depth === "symbol" ? "600" : "normal"};">⚡ Symbol</button>
+            </div>
+            <button type="button" class="ptool-btn ${this.bundleChords ? "active" : ""}" id="wheelBundleToggle" style="font-size:11px; padding:3px 8px; border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer; background:${this.bundleChords ? "#064e3b" : "var(--panel, #15181b)"}; color:${this.bundleChords ? "#34d399" : "var(--ink, #e7e9ea)"}; font-weight:600;" title="Hierarchical Edge Bundling: route chords through shared radial corridors">🌿 Bundle Chords</button>
+            ${
+              this.drilldownModule
+                ? `
+              <div class="wheel-breadcrumb" style="display:flex; align-items:center; gap:6px; background:var(--panel, #15181b); border:1px solid #38bdf8; border-radius:6px; padding:2px 8px; font-size:11px; color:#38bdf8;">
+                <span>Zoom: <strong>${this.drilldownModule}</strong></span>
+                <button type="button" id="wheelBreadcrumbReset" style="background:transparent; border:none; color:#f87171; cursor:pointer; font-size:12px; font-weight:bold; padding:0 2px;" title="Reset zoom">✕</button>
+              </div>
+            `
+                : ""
+            }
+          </div>
+          <div style="display:flex; gap:8px; pointer-events:auto;">
+            ${activeId ? `<button type="button" class="ptool-btn" id="wheelClearBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:#fde047; border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">✕ Clear Focus</button>` : ""}
+            <button type="button" class="ptool-btn" id="wheelResetBtn" style="font-size:11px; padding:3px 8px; background:var(--panel, #15181b); color:var(--ink, #e7e9ea); border:1px solid var(--border, #242b30); border-radius:6px; cursor:pointer;">↺ Reset View</button>
+          </div>
         </div>
         <svg class="wheel-svg" width="100%" height="100%" viewBox="0 0 ${w} ${h}" style="display:block; cursor:grab;">
           <defs>
@@ -291,15 +545,19 @@ export class WheelView {
 
     for (const chord of model.chords) {
       const isConnected = activeId
-        ? chord.sourceNode.id === activeId || chord.targetNode.id === activeId
+        ? chord.sourceNode.id === activeId ||
+          chord.targetNode.id === activeId ||
+          Boolean(chord.sourceNode.memberIds?.includes(activeId)) ||
+          Boolean(chord.targetNode.memberIds?.includes(activeId))
         : true;
       const cls = activeId ? (isConnected ? "wheel-chord chord-illuminated" : "wheel-chord chord-dimmed") : "wheel-chord";
       const opacity = activeId ? (isConnected ? "0.92" : "0.05") : "0.32";
-      const strokeWidth = isConnected && activeId ? "2.6" : "1.4";
+      const baseWidth = Math.min(8, Math.max(1.2, 1.2 + Math.sqrt(chord.weight) * 0.8));
+      const strokeWidth = isConnected && activeId ? (baseWidth * 1.5).toFixed(1) : baseWidth.toFixed(1);
       const filter = isConnected && activeId ? 'filter="url(#chordGlow)"' : "";
 
       html += `
-        <path d="${chord.pathD}" fill="none" stroke="${chord.color}" stroke-width="${strokeWidth}" opacity="${opacity}" class="${cls}" data-source="${chord.sourceNode.id}" data-target="${chord.targetNode.id}" ${filter} style="transition:opacity 0.15s ease;" />
+        <path d="${chord.pathD}" fill="none" stroke="${chord.color}" stroke-width="${strokeWidth}" opacity="${opacity}" class="${cls}" data-source="${chord.sourceNode.id}" data-target="${chord.targetNode.id}" ${filter} style="transition:opacity 0.15s ease;"><title>${chord.sourceNode.name || chord.sourceNode.id} → ${chord.targetNode.name || chord.targetNode.id} (${chord.weight} connection${chord.weight === 1 ? "" : "s"}${chord.bundled ? " · bundled" : ""})</title></path>
       `;
     }
 
@@ -330,13 +588,17 @@ export class WheelView {
       // Individual Node Markers
       for (const n of sec.nodes) {
         if (n.x === undefined || n.y === undefined) continue;
-        const isSelected = n.id === this.selectedNodeId;
-        const isHovered = n.id === this.hoveredNodeId;
-        const r = isSelected || isHovered ? 4.5 : 2.5;
+        const isSelected = n.id === this.selectedNodeId || Boolean(n.memberIds?.includes(this.selectedNodeId || ""));
+        const isHovered = n.id === this.hoveredNodeId || Boolean(n.memberIds?.includes(this.hoveredNodeId || ""));
+        const r = isSelected || isHovered ? (n.isModule ? 6.5 : 4.5) : n.isModule ? 4.5 : 2.5;
         const dotColor = isSelected ? "#ffffff" : isHovered ? "#38bdf8" : sec.color;
 
+        const tip = n.isModule
+          ? `Module: ${n.name} (${n.childCount} files)\n• Click: Select\n• Double-click: In-place drill-down`
+          : `${n.name || n.id}${n.childCount ? ` (${n.childCount} symbols)` : ""}\n• Click: Select`;
+
         html += `
-          <circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${dotColor}" stroke="var(--bg, #0d1012)" stroke-width="1" class="wheel-node" data-node-id="${n.id}" style="cursor:pointer;" />
+          <circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${dotColor}" stroke="var(--bg, #0d1012)" stroke-width="1" class="wheel-node" data-node-id="${n.id}" data-is-module="${n.isModule ? "1" : "0"}" data-module-key="${n.moduleKey || ""}" style="cursor:pointer;"><title>${tip}</title></circle>
         `;
       }
     }
@@ -347,7 +609,7 @@ export class WheelView {
             <g class="wheel-center-hub" transform="translate(${model.cx}, ${model.cy})">
               <circle r="42" fill="var(--panel, #15181b)" stroke="var(--panel2, #2a3439)" stroke-width="1.5" />
               <text y="-6" fill="var(--ink, #e7e9ea)" font-size="12" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">${model.chords.length}</text>
-              <text y="12" fill="var(--muted, #8b9298)" font-size="9" font-weight="600" text-anchor="middle" text-transform="uppercase" letter-spacing="0.5">Couplings</text>
+              <text y="12" fill="var(--muted, #8b9298)" font-size="9" font-weight="600" text-anchor="middle" text-transform="uppercase" letter-spacing="0.5">${model.bundleChords ? "Bundles" : "Couplings"}</text>
             </g>
           </g>
         </svg>
@@ -359,7 +621,6 @@ export class WheelView {
   }
 
   private bindEvents(): void {
-    const wrap = this.container.querySelector<HTMLElement>("..wheel-wrap");
     const svg = this.container.querySelector<SVGElement>(".wheel-svg");
     const resetBtn = this.container.querySelector<HTMLButtonElement>("#wheelResetBtn");
     const clearBtn = this.container.querySelector<HTMLButtonElement>("#wheelClearBtn");
@@ -367,16 +628,37 @@ export class WheelView {
     resetBtn?.addEventListener("click", () => this.resetView());
     clearBtn?.addEventListener("click", () => this.selectNode(null));
 
-    // Node click and hover
+    // Toolbar depth controls
+    this.container.querySelector("#wheelDepthModule")?.addEventListener("click", () => this.setDepth("module"));
+    this.container.querySelector("#wheelDepthFile")?.addEventListener("click", () => this.setDepth("file"));
+    this.container.querySelector("#wheelDepthSymbol")?.addEventListener("click", () => this.setDepth("symbol"));
+
+    // Toolbar bundle toggle
+    this.container.querySelector("#wheelBundleToggle")?.addEventListener("click", () => this.toggleBundle());
+
+    // Breadcrumb reset
+    this.container.querySelector("#wheelBreadcrumbReset")?.addEventListener("click", () => this.setDrilldown(null));
+
+    // Node click, double-click (drill-down), and hover
     const nodeEls = this.container.querySelectorAll<SVGCircleElement>(".wheel-node");
     nodeEls.forEach((el) => {
       const id = el.getAttribute("data-node-id");
+      const isModule = el.getAttribute("data-is-module") === "1";
+      const moduleKey = el.getAttribute("data-module-key") || "";
       if (!id) return;
 
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         this.selectNode(id);
       });
+
+      if (isModule && moduleKey) {
+        el.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this.setDrilldown(this.drilldownModule === moduleKey ? null : moduleKey);
+        });
+      }
 
       el.addEventListener("pointerenter", () => {
         this.hoveredNodeId = id;

@@ -73,7 +73,7 @@ export {
   SankeyView,
 } from "./sankey.js";
 export { FishboneView, computeFishboneModel, type FishboneModel, type FishboneRib } from "./fishbone-view.js";
-export { WheelView, computeWheelModel, type WheelModel, type WheelSector, type WheelChord } from "./wheel-view.js";
+export { WheelView, computeWheelModel, type WheelModel, type WheelSector, type WheelChord, type WheelDepth } from "./wheel-view.js";
 
 export interface VizNode {
   id: string;
