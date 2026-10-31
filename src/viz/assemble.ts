@@ -12,7 +12,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import matter from "gray-matter";
+import { matter, type FrontMatterFile } from "../util/front-matter.js";
 import type { NodeLink, SourceRef } from "../context/node-file.js";
 import { matchNodeFilter, type GraphFilterCriteria } from "../graph/filter.js";
 
@@ -138,7 +138,7 @@ export function assembleContextGraph(contextDir: string, filter?: GraphFilterCri
   if (existsSync(contextDir)) {
     for (const entry of readdirSync(contextDir).sort()) {
       if (!entry.endsWith(".md")) continue;
-      let parsed: matter.GrayMatterFile<string>;
+      let parsed: FrontMatterFile;
       try {
         parsed = matter(readFileSync(join(contextDir, entry), "utf8"));
       } catch {

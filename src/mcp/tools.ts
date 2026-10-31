@@ -32,6 +32,7 @@ import {
   type TripartiteScope,
 } from '../graph/filter.js';
 import { canonicalToolName } from './tool-names.js';
+import { cmd } from '../brand.js';
 
 export interface ToolDef {
   name: string;
@@ -55,10 +56,10 @@ function extractCriteria(args: Record<string, unknown>): GraphFilterCriteria | u
   return { scope, excludeDirs };
 }
 
-const NO_GRAPH = 'no graph found — run `graft build` first';
+const noGraph = (): string => `no graph found — run \`${cmd('graft build')}\` first`;
 
 function unknownSymbolText(query: string): string {
-  return `no symbol "${query}" in the graph — check spelling or run \`graft build\``;
+  return `no symbol "${query}" in the graph — check spelling or run \`${cmd('graft build')}\``;
 }
 
 export const TOOLS: ToolDef[] = [
@@ -355,7 +356,7 @@ async function callSingleTool(
         const symbol = String(args.symbol ?? args.file ?? '');
         if (!symbol) return { text: 'graft_trace_calls requires a symbol', isError: true };
         let w = loadGraphCached(contextDirFor(root, dirOverride));
-        if (!w) return { text: NO_GRAPH, isError: true };
+        if (!w) return { text: noGraph(), isError: true };
         const criteria = extractCriteria(args);
         if (criteria) w = filterGraphV1(w, criteria);
         const inOpt = typeof args.in === 'string' && args.in ? { in: args.in } : {};
@@ -380,7 +381,7 @@ async function callSingleTool(
         const pattern = String(args.pattern ?? '');
         if (!pattern) return { text: 'graft_find_all requires a pattern', isError: true };
         let w = loadGraphCached(contextDirFor(root, dirOverride));
-        if (!w) return { text: NO_GRAPH, isError: true };
+        if (!w) return { text: noGraph(), isError: true };
         const criteria = extractCriteria(args);
         if (criteria) w = filterGraphV1(w, criteria);
         const result = grepGraph(w, root, pattern, {
@@ -393,7 +394,7 @@ async function callSingleTool(
       }
       case 'graft_repo_map': {
         let w = loadGraphCached(contextDirFor(root, dirOverride));
-        if (!w) return { text: NO_GRAPH, isError: true };
+        if (!w) return { text: noGraph(), isError: true };
         const criteria = extractCriteria(args);
         if (criteria) w = filterGraphV1(w, criteria);
         const maxDirs = typeof args.max_dirs === 'number' && Number.isFinite(args.max_dirs) && args.max_dirs > 0 ? args.max_dirs : undefined;

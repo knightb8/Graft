@@ -13,6 +13,7 @@ import { readFileSync, existsSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { assembleContextGraph } from "./assemble.js";
 import { filterGraphV1, type GraphFilterCriteria, type TripartiteScope } from "../graph/filter.js";
+import { cmd } from "../brand.js";
 
 export interface VizServerOptions {
   contextDir: string;
@@ -90,19 +91,19 @@ export async function startVizServer(opts: VizServerOptions): Promise<VizServer>
     if (path === "/api/code-graph") {
       const file = join(opts.contextDir, ".graph", "wiring.json");
       if (!existsSync(file)) {
-        sendJson(res, 404, { error: "no wiring graph in this context dir — run `graft build` first" });
+        sendJson(res, 404, { error: `no wiring graph in this context dir — run \`${cmd("graft build")}\` first` });
         return;
       }
       try {
         const parsed = JSON.parse(readFileSync(file, "utf8"));
         if (parsed?.meta?.version !== 1) {
-          sendJson(res, 404, { error: "wiring.json has an unsupported version — regenerate with `graft build`" });
+          sendJson(res, 404, { error: `wiring.json has an unsupported version — regenerate with \`${cmd("graft build")}\`` });
           return;
         }
         const result = filterCriteria ? filterGraphV1(parsed, filterCriteria) : parsed;
         sendJson(res, 200, result);
       } catch {
-        sendJson(res, 404, { error: "wiring.json is unreadable — regenerate with `graft build`" });
+        sendJson(res, 404, { error: `wiring.json is unreadable — regenerate with \`${cmd("graft build")}\`` });
       }
       return;
     }
