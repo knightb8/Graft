@@ -36,6 +36,7 @@ import {
   computeGalaxyLandmarks, relaxLocalNeighborhood, type TriStateFilterResult,
   extractTreeBackbone, relaxAndSeparateGalaxiesVectorized, lerpNodePositions, FlatSpatialGrid,
   consolidateOrphanClusters, synthesizeDirectoryTree, applyCosmosConcentricLayout,
+  type NodeSizeMetric, computeNodeSizeRadius,
 } from "./data.js";
 
 export type GraphLayoutEngine = "stress" | "cosmos" | "d3" | "legacy";
@@ -145,6 +146,8 @@ export interface EdgeAttrs {
   size: number;
   color: string;
   weight?: number;
+  count?: number;
+  corridorCount?: number;
   intraCluster?: boolean;
   hidden?: boolean;
   visibility?: "visible" | "hidden";
@@ -231,6 +234,9 @@ export class GraphView {
   cachedMaxDeg = 0;
   landmarkSet = new Set<string>();
   triStateResult: TriStateFilterResult | null = null;
+  public nodeSizeMetric: NodeSizeMetric = "degree";
+  public nodeStats = new Map<string, { deg: number; inDeg: number; outDeg: number }>();
+  public onNodeSizeMetricChange?: (metric: NodeSizeMetric) => void;
   public autoRebounce = true;
   public layoutEngine: GraphLayoutEngine = "stress";
   public contractionMode: EdgeContractionMode = "coupled";
@@ -844,9 +850,28 @@ export class GraphView {
     this.rawGraph = effectiveGraph;
 
     const deg: Record<string, number> = {};
+    const inDeg: Record<string, number> = {};
+    const outDeg: Record<string, number> = {};
+    const pairEdgeCounts = new Map<string, number>();
+
     for (const e of effectiveGraph.edges) {
       deg[e.source] = (deg[e.source] ?? 0) + 1;
       deg[e.target] = (deg[e.target] ?? 0) + 1;
+      outDeg[e.source] = (outDeg[e.source] ?? 0) + 1;
+      inDeg[e.target] = (inDeg[e.target] ?? 0) + 1;
+
+      const pKey = e.source < e.target ? `${e.source}--${e.target}` : `${e.target}--${e.source}`;
+      const c = e.count ?? 1;
+      pairEdgeCounts.set(pKey, (pairEdgeCounts.get(pKey) ?? 0) + c);
+    }
+
+    this.nodeStats.clear();
+    for (const n of effectiveGraph.nodes) {
+      this.nodeStats.set(n.id, {
+        deg: deg[n.id] ?? 0,
+        inDeg: inDeg[n.id] ?? 0,
+        outDeg: outDeg[n.id] ?? 0,
+      });
     }
 
     const prevPositions = new Map<string, { x: number; y: number }>();
@@ -921,12 +946,11 @@ export class GraphView {
       clusterMemberCounts.set(cKey, mIdx + 1);
 
       // Phyllotaxis golden-angle spiral around cluster centroid (mIdx=0 hub sits at r=0 center)
-      const r = mIdx === 0 ? 0 : 34 * Math.sqrt(mIdx + 1);
+      const rSpiral = mIdx === 0 ? 0 : 34 * Math.sqrt(mIdx + 1);
       const th = mIdx * 2.399963229728653;
 
-      const baseR = n.type === "module"
-        ? 9 + Math.min(10, Math.sqrt(n.childCount ?? 4) * 1.2)
-        : n.childCount ? 5 + Math.min(14, Math.sqrt(n.childCount) * 1.3) : 4;
+      const stats = this.nodeStats.get(n.id) || { deg: d, inDeg: inDeg[n.id] ?? 0, outDeg: outDeg[n.id] ?? 0 };
+      const r = computeNodeSizeRadius(n, this.nodeSizeMetric, stats);
 
       return {
         id: n.id,
@@ -936,9 +960,9 @@ export class GraphView {
         owners: n.owners,
         scope,
         deg: d,
-        r: baseR + Math.min(7, Math.sqrt(d) * 1.2),
-        x: p?.x ?? (cc.x + Math.cos(th) * r),
-        y: p?.y ?? (cc.y + Math.sin(th) * r),
+        r,
+        x: p?.x ?? (cc.x + Math.cos(th) * rSpiral),
+        y: p?.y ?? (cc.y + Math.sin(th) * rSpiral),
         clusterKey: cKey,
         isSupportNode: supportNodes.has(n.id),
       };
@@ -1001,6 +1025,8 @@ export class GraphView {
         const isBackbone = backboneSet.has(key);
         const fam = famOf(e.relation);
         const isSupportEdge = isSupportTarget && (fam === "dependency" || e.relation === "references");
+        const pKey = e.source < e.target ? `${e.source}--${e.target}` : `${e.target}--${e.source}`;
+        const corridorCount = pairEdgeCounts.get(pKey) ?? (e.count ?? 1);
         nextGraph.addEdgeWithKey(key, e.source, e.target, {
           relation: e.relation,
           description: e.description,
@@ -1009,6 +1035,8 @@ export class GraphView {
           size: intraCluster ? 1.6 : 0.9,
           color: defaultEdgeColor,
           weight,
+          count: e.count ?? 1,
+          corridorCount,
           intraCluster,
           isBackbone,
           isSupportEdge,
@@ -1400,6 +1428,10 @@ export class GraphView {
       size = isIntra ? 1.2 : 0.75;
       opacity = isIntra ? 0.42 : 0.08;
     }
+
+    const acc = attrs.corridorCount ?? attrs.count ?? 1;
+    const girthMultiplier = Math.max(1, Math.min(4.5, Math.sqrt(acc)));
+    size = Math.round(size * girthMultiplier * 10) / 10;
 
     const isReflectedSource = Boolean(this.triStateResult?.circletraceReflectedIds?.has(source));
     const isReflectedTarget = Boolean(this.triStateResult?.circletraceReflectedIds?.has(target));
@@ -1841,6 +1873,21 @@ export class GraphView {
     if (this.sourceGraph) {
       this.setData(this.sourceGraph, this.tab);
     }
+  }
+
+  setNodeSizeMetric(metric: NodeSizeMetric): void {
+    if (this.nodeSizeMetric === metric) return;
+    this.nodeSizeMetric = metric;
+    for (const n of this.nodes) {
+      const stats = this.nodeStats.get(n.id) || { deg: n.deg || 0, inDeg: 0, outDeg: 0 };
+      n.r = computeNodeSizeRadius(n, this.nodeSizeMetric, stats);
+      if (this.graph.hasNode(n.id)) {
+        this.graph.setNodeAttribute(n.id, "size", n.r);
+      }
+    }
+    this.restyle();
+    this.sigma?.refresh();
+    this.onNodeSizeMetricChange?.(metric);
   }
 
   get currentTab(): "context" | "code" {

@@ -7,6 +7,7 @@ import {
   colorToken, cvar, famOf, type VizGraph, type TripartiteScope, type ConcreteScope, matchNodeFilter,
   scopeOfNode, relationColor, clusterKeyOfNode, galaxyColorOfCluster, parentIdOfNode,
   evaluateTriStateFilter, type EdgeContractionMode, COSMOS_PRESETS, SankeyView, FishboneView, WheelView,
+  type NodeSizeMetric,
 } from "./data.js";
 import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
@@ -346,6 +347,7 @@ function setCanvasBase(base: CanvasBase): void {
 
   const galaxyGroup = $("galaxyViewGroup");
   const layoutGroup = $("layoutEngineGroup");
+  const nodeSizeGroup = $("nodeSizeGroup");
   const zoomCtl = document.querySelector<HTMLElement>(".zoomctl");
   const edgeChips = $("edgeChips");
   const filterBar = $("filterBar");
@@ -359,6 +361,7 @@ function setCanvasBase(base: CanvasBase): void {
 
   if (galaxyGroup) galaxyGroup.style.display = isGalaxy ? "" : "none";
   if (layoutGroup) layoutGroup.style.display = isGalaxy ? "" : "none";
+  if (nodeSizeGroup) nodeSizeGroup.style.display = isGalaxy ? "" : "none";
   if (zoomCtl) zoomCtl.style.display = isGalaxy ? "" : "none";
   if (edgeChips) edgeChips.style.display = isGalaxy ? "" : "none";
   if (legend) legend.style.display = isGalaxy ? "" : "none";
@@ -706,6 +709,23 @@ document.querySelectorAll<HTMLButtonElement>(".engine-btn").forEach((btn) => {
     if (eng) {
       view.setLayoutEngine(eng);
       syncSliderUI();
+    }
+  });
+});
+
+document.querySelectorAll<HTMLButtonElement>(".node-size-btn").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const metric = btn.getAttribute("data-node-size") as NodeSizeMetric;
+    if (metric) {
+      view.setNodeSizeMetric(metric);
+      document.querySelectorAll<HTMLButtonElement>(".node-size-btn").forEach((b) => {
+        const isActive = b.getAttribute("data-node-size") === metric;
+        b.classList.toggle("active", isActive);
+        b.style.background = isActive ? "var(--accent, #38bdf8)" : "";
+        b.style.color = isActive ? "#0b0e11" : "";
+        b.style.fontWeight = isActive ? "600" : "";
+      });
     }
   });
 });

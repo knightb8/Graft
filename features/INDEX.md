@@ -23,6 +23,7 @@
 | **viz** | **core** | 27 | `viz/core/entity_event_system_and_columnar_stores-27.feature` | Entity Event System and Columnar TypedArray Stores |
 | **viz** | **core** | 15 | `viz/core/fa2_layout_and_bloom_scaling-15.feature` | Pure ForceAtlas2 Layout and Viewport-Scaled Archipelago Blooms |
 | **viz** | **core** | 17 | `viz/core/galaxy_cluster_layout-17.feature` | Galaxy Cluster Layout and Spiderweb Edge De-Cluttering |
+| **viz** | **core** | 30 | `viz/core/galaxy_sizing_and_fishbone_dynamics-30.feature` | Visualizer Ergonomics, Dynamic Fishbone Clearance, and Galaxy Sizing Metrics |
 | **viz** | **core** | 18 | `viz/core/hierarchical_tree_backbone_and_curved_edges-18.feature` | Hierarchical Tree-Backbone Layout and Curved WebGL Edges |
 | **viz** | **core** | 19 | `viz/core/hybrid_miller_sankey_and_tristate_filters-19.feature` | Hybrid Miller-Sankey Explorer and Tri-State Cascading Tree Filters |
 | **viz** | **core** | 21 | `viz/core/interactive_physics_and_visual_parity-21.feature` | Interactive Bouncy Drag Physics and Original Visualizer Parity |

@@ -67,6 +67,14 @@
         <button type="button" class="ptool-btn engine-btn" data-layout-engine="cosmos" title="ForceAtlas2 + Concentric Separation layout" style="font-size:11px; padding:2px 8px;">Cosmos</button>
         <button type="button" class="ptool-btn engine-btn" data-layout-engine="d3" title="Original upstream D3-force layout with Barnes-Hut repulsion and semantic resting lengths" style="font-size:11px; padding:2px 8px;">Classic D3</button>
       </div>
+      <div class="filter-group" id="nodeSizeGroup" style="border-right:1px solid var(--panel2, #242b30); padding-right:8px; margin-right:4px;">
+        <span class="cap">Size</span>
+        <button type="button" class="ptool-btn node-size-btn active" data-node-size="degree" title="Size nodes by total connections (in + out)" style="font-size:11px; padding:2px 8px; background:var(--accent, #38bdf8); color:#0b0e11; font-weight:600;">Degree</button>
+        <button type="button" class="ptool-btn node-size-btn" data-node-size="loc" title="Size nodes by Lines of Code (LOC)" style="font-size:11px; padding:2px 8px;">LOC</button>
+        <button type="button" class="ptool-btn node-size-btn" data-node-size="symbols" title="Size nodes by number of functions/symbols" style="font-size:11px; padding:2px 8px;">Symbols</button>
+        <button type="button" class="ptool-btn node-size-btn" data-node-size="indegree" title="Size nodes by incoming references (in-degree)" style="font-size:11px; padding:2px 8px;">In</button>
+        <button type="button" class="ptool-btn node-size-btn" data-node-size="outdegree" title="Size nodes by outgoing dependencies (out-degree)" style="font-size:11px; padding:2px 8px;">Out</button>
+      </div>
       <div class="filter-group">
         <span class="cap">Scope</span>
         <label class="scope-chip on" title="Toggle Code scope"><input type="checkbox" class="scope-cb" data-scope="code" checked><span class="sw sw-code"></span>code</label>

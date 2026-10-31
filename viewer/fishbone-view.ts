@@ -153,61 +153,52 @@ export function computeFishboneModel(
     stageBuckets[st].push(item);
   }
 
-  // Define rib positions along the spine
-  // Junction 1: Top = adrs, Bottom = tests
-  // Junction 2: Top = features, Bottom = docs
-  // Junction 3: Top = code (or bottom if top is full)
-  const ribDefs: Array<{
-    stage: FishboneStage;
-    side: "top" | "bottom";
-    junctionRatio: number; // relative placement along spine
-  }> = [
-    { stage: "adrs", side: "top", junctionRatio: 0.22 },
-    { stage: "tests", side: "bottom", junctionRatio: 0.28 },
-    { stage: "features", side: "top", junctionRatio: 0.52 },
-    { stage: "docs", side: "bottom", junctionRatio: 0.58 },
-    { stage: "code", side: "top", junctionRatio: 0.80 },
-  ];
-
   const headWidth = 180;
   const headHeight = 54;
   const headX = 120;
   const headY = cy;
 
   const spineStartX = headX + Math.round(headWidth / 2);
-  const spineLength = 960;
-  const spineEndX = spineStartX + spineLength;
+
+  // Group stages by side
+  // Top side: adrs, features, code
+  // Bottom side: tests, docs
+  const topStages: FishboneStage[] = ["adrs", "features", "code"];
+  const bottomStages: FishboneStage[] = ["tests", "docs"];
+
+  // Compute required height and deltaX for each stage based on its sub-bone count
+  // To avoid vertical overlap of 24px cards, allocate at least 38px vertical pitch per sub-bone
+  const getStageGeometry = (count: number) => {
+    const deltaY = Math.max(160, (count + 1) * 38);
+    const deltaX = deltaY; // 45 degree angle
+    return { deltaY, deltaX };
+  };
 
   const ribs: FishboneRib[] = [];
+  const boneWidth = 175;
 
-  for (const def of ribDefs) {
-    const stageItems = stageBuckets[def.stage];
-    const meta = STAGE_META[def.stage];
-    const jx = Math.round(spineStartX + spineLength * def.junctionRatio);
-    const jy = cy;
-
-    // Rib slants backwards toward the tail: tipX > jx
-    const ribLength = 220;
-    const angleRad = Math.PI / 4; // 45 degrees
-    const deltaX = Math.round(ribLength * Math.cos(angleRad));
-    const deltaY = Math.round(ribLength * Math.sin(angleRad));
-
-    const tipX = jx + deltaX;
-    const tipY = def.side === "top" ? jy - deltaY : jy + deltaY;
-
-    // Sub-bones branching off to the right
-    const subBones: FishboneSubBone[] = [];
+  // Lay out top ribs sequentially
+  let currentTopX = spineStartX + 90;
+  for (const stage of topStages) {
+    const stageItems = stageBuckets[stage];
+    const meta = STAGE_META[stage];
     const count = stageItems.length;
+    const { deltaX, deltaY } = getStageGeometry(count);
 
+    const jx = currentTopX;
+    const jy = cy;
+    const tipX = jx + deltaX;
+    const tipY = jy - deltaY;
+
+    const subBones: FishboneSubBone[] = [];
     for (let i = 0; i < count; i++) {
       const item = stageItems[i];
       const t = (i + 1) / (count + 1);
       const bx = Math.round(jx + deltaX * t);
-      const by = Math.round(def.side === "top" ? jy - deltaY * t : jy + deltaY * t);
+      const by = Math.round(jy - deltaY * t);
 
-      const boneWidth = 150;
       subBones.push({
-        id: `bone_${def.stage}_${i}`,
+        id: `bone_${stage}_${i}`,
         node: item.node,
         relation: item.relation,
         x1: bx,
@@ -221,17 +212,83 @@ export function computeFishboneModel(
     }
 
     ribs.push({
-      stage: def.stage,
+      stage,
       title: meta.title,
       color: meta.color,
-      side: def.side,
+      side: "top",
       junctionX: jx,
       junctionY: jy,
       tipX,
       tipY,
       subBones,
     });
+
+    currentTopX += Math.max(220, deltaX + 70);
   }
+
+  // Lay out bottom ribs sequentially (staggered initial offset)
+  let currentBottomX = spineStartX + 190;
+  for (const stage of bottomStages) {
+    const stageItems = stageBuckets[stage];
+    const meta = STAGE_META[stage];
+    const count = stageItems.length;
+    const { deltaX, deltaY } = getStageGeometry(count);
+
+    const jx = currentBottomX;
+    const jy = cy;
+    const tipX = jx + deltaX;
+    const tipY = jy + deltaY;
+
+    const subBones: FishboneSubBone[] = [];
+    for (let i = 0; i < count; i++) {
+      const item = stageItems[i];
+      const t = (i + 1) / (count + 1);
+      const bx = Math.round(jx + deltaX * t);
+      const by = Math.round(jy + deltaY * t);
+
+      subBones.push({
+        id: `bone_${stage}_${i}`,
+        node: item.node,
+        relation: item.relation,
+        x1: bx,
+        y1: by,
+        x2: bx + boneWidth,
+        y2: by,
+        labelX: bx + 8,
+        labelY: by - 4,
+        width: boneWidth,
+      });
+    }
+
+    ribs.push({
+      stage,
+      title: meta.title,
+      color: meta.color,
+      side: "bottom",
+      junctionX: jx,
+      junctionY: jy,
+      tipX,
+      tipY,
+      subBones,
+    });
+
+    currentBottomX += Math.max(220, deltaX + 70);
+  }
+
+  // Determine total spine extent
+  let maxExtentX = spineStartX + 800;
+  for (const r of ribs) {
+    if (r.tipX + 160 > maxExtentX) {
+      maxExtentX = r.tipX + 160;
+    }
+    for (const b of r.subBones) {
+      if (b.x2 + 40 > maxExtentX) {
+        maxExtentX = b.x2 + 40;
+      }
+    }
+  }
+
+  const spineEndX = Math.round(maxExtentX + 60);
 
   return {
     head: {
@@ -308,7 +365,12 @@ export class FishboneView {
     this.panX = 0;
     this.panY = 0;
     this.zoom = 1.0;
-    this.render();
+    const stage = this.container.querySelector<SVGGElement>(".fishbone-stage");
+    if (stage) {
+      stage.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);
+    } else {
+      this.render();
+    }
   }
 
   render(): void {
@@ -331,8 +393,9 @@ export class FishboneView {
       height: h,
     });
 
-    const svgWidth = Math.max(w, model.tail.x + 120);
-    const svgHeight = Math.max(h, 800);
+    const svgWidth = Math.max(w, model.tail.x + 160);
+    const maxTipOffset = Math.max(200, ...model.ribs.map((r) => Math.abs(r.tipY - (h / 2))));
+    const svgHeight = Math.max(h, Math.round((h / 2) + maxTipOffset + 90));
 
     let html = `
       <div class="fishbone-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg, #0d1012);">
@@ -377,14 +440,16 @@ export class FishboneView {
       for (const bone of rib.subBones) {
         const shortName = bone.node.name || bone.node.id.split("/").pop() || bone.node.id;
         const verb = bone.relation;
+        const displayLabel = shortName.length > 17 ? shortName.slice(0, 15) + "…" : shortName;
         html += `
           <!-- Sub-bone: ${bone.node.id} -->
           <g class="fishbone-subbone" data-node-id="${bone.node.id}" style="cursor:pointer;">
+            <title>${bone.node.id} (${verb})</title>
             <line x1="${bone.x1}" y1="${bone.y1}" x2="${bone.x2}" y2="${bone.y2}" stroke="var(--border, #38424b)" stroke-width="1.5" stroke-dasharray="2 2" />
             <g transform="translate(${bone.labelX}, ${bone.labelY - 14})" filter="url(#boneGlow)">
               <rect x="0" y="0" width="${bone.width - 12}" height="24" rx="6" fill="var(--panel, #15181b)" stroke="var(--panel2, #2a3439)" stroke-width="1" class="bone-card-bg" />
               <text x="8" y="16" fill="var(--accent, #38bdf8)" font-size="9.5" font-weight="700" font-family="system-ui, sans-serif">${verb}</text>
-              <text x="56" y="16" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="500" font-family="system-ui, sans-serif">${shortName}</text>
+              <text x="56" y="16" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="500" font-family="system-ui, sans-serif">${displayLabel}</text>
             </g>
           </g>
         `;
@@ -439,25 +504,38 @@ export class FishboneView {
     if (!wrap || !svg) return;
 
     // Pan & Zoom
-    svg.addEventListener("wheel", (e: any) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      this.zoom = Math.min(2.5, Math.max(0.4, this.zoom * zoomFactor));
-      this.render();
-    });
+    svg.addEventListener(
+      "wheel",
+      (e: any) => {
+        if (typeof e.preventDefault === "function") e.preventDefault();
+        const factor = (e.deltaY || 0) < 0 ? 1.12 : 0.88;
+        const nextZoom = Math.min(3.5, Math.max(0.35, Number((this.zoom * factor).toFixed(3))));
+        const rect = typeof svg.getBoundingClientRect === "function" ? svg.getBoundingClientRect() : { left: 0, top: 0 };
+        const mx = (e.clientX || 0) - rect.left;
+        const my = (e.clientY || 0) - rect.top;
+        this.panX = Math.round(mx - ((mx - this.panX) / this.zoom) * nextZoom);
+        this.panY = Math.round(my - ((my - this.panY) / this.zoom) * nextZoom);
+        this.zoom = nextZoom;
+        const stage = svg.querySelector<SVGGElement>(".fishbone-stage");
+        if (stage) {
+          stage.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);
+        }
+      },
+      { passive: false } as any,
+    );
 
     svg.addEventListener("pointerdown", (e: any) => {
       if (e.target?.closest(".fishbone-subbone")) return;
       this.isDragging = true;
-      this.dragStartX = e.clientX - this.panX;
-      this.dragStartY = e.clientY - this.panY;
+      this.dragStartX = (e.clientX || 0) - this.panX;
+      this.dragStartY = (e.clientY || 0) - this.panY;
       svg.style.cursor = "grabbing";
     });
 
     svg.addEventListener("pointermove", (e: any) => {
       if (!this.isDragging) return;
-      this.panX = e.clientX - this.dragStartX;
-      this.panY = e.clientY - this.dragStartY;
+      this.panX = (e.clientX || 0) - this.dragStartX;
+      this.panY = (e.clientY || 0) - this.dragStartY;
       const stage = svg.querySelector<SVGGElement>(".fishbone-stage");
       if (stage) {
         stage.setAttribute("transform", `translate(${this.panX}, ${this.panY}) scale(${this.zoom})`);

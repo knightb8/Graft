@@ -101,6 +101,8 @@ export interface VizEdge {
   relation: string;
   description?: string;
   confidence?: "extracted" | "inferred";
+  count?: number;
+  weight?: number;
 }
 
 export interface EvidenceLine {
@@ -402,14 +404,18 @@ export function aggregateGraphToParents(graph: VizGraph): VizGraph {
     if (!parentNodes.has(srcParent) || !parentNodes.has(tgtParent)) continue;
 
     const edgeKey = `${srcParent}->${tgtParent}:${e.relation}`;
-    if (!liftedEdgesMap.has(edgeKey)) {
+    const existing = liftedEdgesMap.get(edgeKey);
+    if (!existing) {
       liftedEdgesMap.set(edgeKey, {
         source: srcParent,
         target: tgtParent,
         relation: e.relation,
         description: e.description,
         confidence: e.confidence,
+        count: 1,
       });
+    } else {
+      existing.count = (existing.count ?? 1) + 1;
     }
   }
 
@@ -1934,6 +1940,74 @@ export {
   type BlastAttenuationNode,
   type BlastAttenuationResult,
 } from "./sankey.js";
+
+export type NodeSizeMetric = "degree" | "loc" | "symbols" | "indegree" | "outdegree";
+
+/**
+ * Extracts estimated lines of code (LOC) from node source ranges or child count.
+ * Recognizes spans like "src/app.ts · L1-L150", "src/app.ts · 1-150", "10-25".
+ */
+export function extractNodeLoc(node: { sources?: string[]; childCount?: number }): number {
+  if (!node.sources || node.sources.length === 0) {
+    return Math.max(1, (node.childCount ?? 0) * 15 || 25);
+  }
+  let totalLines = 0;
+  for (const src of node.sources) {
+    const match = src.match(/(?:L)?(\d+)\s*-\s*(?:L)?(\d+)/i);
+    if (match) {
+      const start = parseInt(match[1], 10);
+      const end = parseInt(match[2], 10);
+      if (!isNaN(start) && !isNaN(end) && end >= start) {
+        totalLines += (end - start + 1);
+      }
+    }
+  }
+  if (totalLines > 0) return totalLines;
+  return Math.max(1, (node.childCount ?? 0) * 15 || 25);
+}
+
+/**
+ * Computes the visual radius of a node based on the selected metric.
+ */
+export function computeNodeSizeRadius(
+  node: { type?: string; childCount?: number; sources?: string[] },
+  metric: NodeSizeMetric,
+  stats: { deg: number; inDeg: number; outDeg: number },
+): number {
+  const isModule = node.type === "module";
+
+  switch (metric) {
+    case "loc": {
+      const loc = extractNodeLoc(node);
+      const baseR = isModule ? 8 : (node.childCount ? 5 : 4);
+      return Math.round((baseR + Math.min(22, Math.sqrt(loc) * 0.55)) * 10) / 10;
+    }
+    case "symbols": {
+      const syms = node.childCount ?? 1;
+      const baseR = isModule ? 8 : 4;
+      return Math.round((baseR + Math.min(20, Math.sqrt(syms) * 2.2)) * 10) / 10;
+    }
+    case "indegree": {
+      const inD = stats.inDeg;
+      const baseR = isModule ? 8 : (node.childCount ? 5 : 4);
+      return Math.round((baseR + Math.min(20, Math.sqrt(inD) * 2.2)) * 10) / 10;
+    }
+    case "outdegree": {
+      const outD = stats.outDeg;
+      const baseR = isModule ? 8 : (node.childCount ? 5 : 4);
+      return Math.round((baseR + Math.min(20, Math.sqrt(outD) * 2.2)) * 10) / 10;
+    }
+    case "degree":
+    default: {
+      const d = stats.deg;
+      const baseR = isModule
+        ? 9 + Math.min(10, Math.sqrt(node.childCount ?? 4) * 1.2)
+        : node.childCount ? 5 + Math.min(14, Math.sqrt(node.childCount) * 1.3) : 4;
+      return Math.round((baseR + Math.min(7, Math.sqrt(d) * 1.2)) * 10) / 10;
+    }
+  }
+}
+
 
 
 

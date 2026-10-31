@@ -916,7 +916,7 @@ export class SankeyView {
             fill: rgba(255, 255, 255, 0.16);
           }
         </style>
-        <div class="sankey-toolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:7px; padding:6px 12px; margin:46px 14px 4px 14px; font-size:11px; color:var(--ink, #e7e9ea); z-index:2; flex-shrink:0;">
+        <div class="sankey-toolbar" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; background:var(--panel, #15181b); border:1px solid var(--border, #242b30); border-radius:7px; padding:6px 12px; margin:62px 14px 4px 14px; font-size:11px; color:var(--ink, #e7e9ea); z-index:2; flex-shrink:0;">
           <span style="font-weight:600; color:var(--accent, #38bdf8);">Stacked Lifecycle Flow</span>
           <button type="button" class="ptool-btn" id="sankeyGroupFolders" title="Roll up files & test suites into directory/domain bars">${collapsedCount > 0 ? `📁 Folders Grouped (${collapsedCount})` : "📁 Group by Folder"}</button>
           <button type="button" class="ptool-btn" id="sankeyExpandFiles" title="Expand all folders into individual files">📄 Expand All Files</button>
@@ -989,17 +989,19 @@ export class SankeyView {
     });
     const clearBtn = this.container.querySelector("#sankeyClearTrace");
     if (clearBtn) {
-      clearBtn.addEventListener("pointerdown", (ev: Event) => {
-        ev.stopPropagation();
-      });
-      clearBtn.addEventListener("click", (ev: Event) => {
+      let clearHandled = false;
+      const doClear = (ev: Event) => {
         ev.stopPropagation();
         ev.preventDefault();
+        if (clearHandled) return;
+        clearHandled = true;
         this.selectedId = null;
         this.selectedBarIds = null;
         this.onSelect(null);
         this.render();
-      });
+      };
+      clearBtn.addEventListener("pointerdown", doClear);
+      clearBtn.addEventListener("click", doClear);
     }
 
     // Dynamic live ribbon refresh during dragging
@@ -1075,7 +1077,7 @@ export class SankeyView {
         const curOff = this.barOffsets.get(barId) ?? { dx: 0, dy: 0 };
         startOffX = curOff.dx;
         startOffY = curOff.dy;
-        el.parentElement?.appendChild(el);
+        // Do not re-parent DOM node on pointerdown to keep click and pointer capture intact!
         try {
           el.setPointerCapture(ev.pointerId);
         } catch {
@@ -1091,6 +1093,7 @@ export class SankeyView {
         if (!moved) {
           if (Math.hypot(rawDx, rawDy) > 8) {
             moved = true;
+            el.parentElement?.appendChild(el);
             el.classList.add("is-dragging");
           } else {
             return;
