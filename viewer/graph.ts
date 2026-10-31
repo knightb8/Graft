@@ -1629,26 +1629,33 @@ export class GraphView {
     }
 
     try {
+      this.sigma.refresh();
+
+      // Calculate true Center of Mass (weighted average of all visible nodes)
+      let sumX = 0;
+      let sumY = 0;
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
       let maxY = -Infinity;
 
       for (const n of visibleNodes) {
+        sumX += n.x;
+        sumY += n.y;
         if (n.x < minX) minX = n.x;
         if (n.x > maxX) maxX = n.x;
         if (n.y < minY) minY = n.y;
         if (n.y > maxY) maxY = n.y;
       }
 
-      const midX = (minX + maxX) / 2;
-      const midY = (minY + maxY) / 2;
-      const framedCenter = this.sigma.graphToFramedGraph({ x: midX, y: midY });
+      const comX = sumX / visibleNodes.length;
+      const comY = sumY / visibleNodes.length;
+      const framedCenter = this.sigma.graphToFramedGraph({ x: comX, y: comY });
 
       const W = this.container.clientWidth || 800;
       const H = this.container.clientHeight || 600;
 
-      // Project bounds to viewport at reference camera ratio 1.0
+      // Project bounds to viewport at reference camera ratio 1.0 centered on Center of Mass
       const pMin = this.sigma.graphToViewport(
         { x: minX, y: minY },
         { cameraState: { x: framedCenter.x, y: framedCenter.y, ratio: 1.0, angle: 0 } },
@@ -1820,6 +1827,7 @@ export class GraphView {
       } else {
         this.rebounceAnimId = null;
         this.restyle();
+        this.sigma?.refresh();
         this.resetView();
       }
     };
