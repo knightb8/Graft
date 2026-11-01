@@ -3,7 +3,9 @@
 - **Status**: Proposed (Future Sub-Project — Design & Architecture Roadmap)
 - **Date**: 2026-11-01
 - **Authors**: knightb8, Antigravity
-- **Theoretical Foundation**: Corey L. Lanum, *Visualizing Graph Data* (Manning, 2017), Chapter 6, Section 6.3 (*"Data volumes: Expanding nodes to add data — draw query results, not databases"*)
+- **Theoretical Foundation**:
+  - Corey L. Lanum, *Visualizing Graph Data* (Manning, 2017), Chapter 6, Section 6.3 (*"Data volumes: Expanding nodes to add data — draw query results, not databases"*)
+  - [tt-a1i/archify](https://github.com/tt-a1i/archify) ([archify.si/gallery](https://archify.si/gallery)) — Source-backed interactive architecture, workflow, sequence, and delta diagrams compiled from typed JSON IR
 
 ---
 
@@ -54,6 +56,7 @@ flowchart LR
     Relevant -->|Expand Further| Frontier
     Relevant --> Export
     Pruned -.->|Negative Boundary| Export
+    Relevant --> Archify["📐 Archify-Style Flow Diagram\n(8–12 components, boundaries, SRC spans,\nReach / Route / Lens / Delta views)"]
 ```
 
 ### 3.1 Data Schema (`ExpeditionState`)
@@ -135,9 +138,36 @@ Expeditions bridge visual human discovery and autonomous coding subagents:
 
 ---
 
+### 3.4 Archify-Style Curated Flow Diagrams & Typed IR Target (`tt-a1i/archify`)
+
+A major output target for a completed (or in-flight) **Graft Expedition** is generating **curated, source-backed interactive flow diagrams** inspired by [tt-a1i/archify](https://github.com/tt-a1i/archify) ([archify.si/gallery](https://archify.si/gallery)):
+
+1. **Why Graft + Archify Fit Together Naturally**:
+   - **Archify's Golden Rule**: *"Show 8–12 core components, one primary path, external dependencies, and trust boundaries. Put supporting detail in cards instead of adding more edges."*
+   - **Graft's Ground-Truth AST Index**: Where an LLM using Archify normally has to grep files and hand-author `sources: [{ path, line, end_line, label }]`, Graft *already possesses* the exact `file:line–end_line` spans, symbol definitions, and verified causal edges in its context graph.
+   - **Expedition as the Curation Funnel**: A raw repository graph has 500–5,000 nodes (too large for a cleanschematic diagram), whereas an **Expedition's `seed ∪ relevant` working set** is already distilled down to the 8–15 nodes that answer a specific architectural question.
+
+2. **Supported Archify-Style Diagram Targets from an Expedition**:
+   - **Signal-Flow Architecture View (`diagram_type: "architecture"`)**:
+     - Renders each `relevant` Expedition node as a structured component card (`label`, `sublabel`, role badge, `tag`, and clickable `SRC n` badge pinned to Graft's `file:line` spans).
+     - Automatically wraps subsystem directories or Tripartite scopes (`adrs`, `specs`, `code`, `tests`) in enclosing boundary boxes (`kind: "region" | "security-group"`).
+     - Distinguishes the primary causal path (`variant: "emphasis"` with animated signal-flow pulses) from contract/governance links (`variant: "security"`) and secondary references (`variant: "dashed"`).
+   - **Workflow & Sequence Views (`"workflow"` / `"sequence"`)**:
+     - Traces an ordered execution or verification path across the Expedition's `trail` (e.g., `CLI Entry -> Parser -> Graph Assembler -> Exporter`), showing callers, callees, and exception/fallback branches across swimlanes.
+   - **Architecture Delta View (`Before / Delta / After`)**:
+     - Compares two Graft graph snapshots or an Expedition's planned modifications (`target-edit` nodes) to highlight `added`, `removed`, `changed`, and `moved` components and links during PR/design review.
+   - **Interactive URL Deep-Linking & Lenses**:
+     - `#focus=<component>&reach=downstream|upstream` — isolates upstream provenance or downstream blast reach within the schematic diagram.
+     - `#route=<from>~<to>` — illuminates the exact multi-hop signal route between two components.
+     - `#lens=<roleA>~<roleB>` — filters the schematic to compare specific architectural layers (e.g., `spec~code` or `code~verification`).
+   - **Supporting Narrative Cards (`cards[]`)**:
+     - Compiles the Expedition's `question`, `note` annotations, and `excluded` dead-end rationale into bottom summary cards (`Source-backed dispatch`, `Governing ADRs & Specs`, `Ruled-out paths`) instead of cluttering edges with long text (satisfying Lanum's Ch. 5 link-text discipline).
+
+---
+
 ## 4. Phased Implementation Roadmap (When Activated)
 
-When we decide to schedule this sub-project, it divides cleanly into 3 isolated phases under **BDD Chem**:
+When we decide to schedule this sub-project, it divides cleanly into 4 isolated phases under **BDD Chem**:
 
 1. **Phase A — Core Expedition Model & Persistence (`src/expedition/`)**:
    - JSON/Markdown serialization, state transitions (`seed -> frontier -> relevant | excluded`), and 1-hop frontier computation with Lanum's 2–12 cap.
@@ -145,6 +175,8 @@ When we decide to schedule this sub-project, it divides cleanly into 3 isolated 
    - `graft expedition` subcommands and Markdown prompt/context-bundle export.
 3. **Phase C — Interactive Visualizer "Expedition Mode" (`viewer/expedition-view.ts`)**:
    - Incremental ego-network canvas, radial burst expansion animation, and quick Pin (`✓`) / Prune (`✕`) triage badges.
+4. **Phase D — Archify-Style Schematic Flow Renderer & IR Exporter (`src/expedition/archify-ir.ts`, `viewer/flow-schematic-view.ts`)**:
+   - Deterministic compiler from a `GraftExpedition` (plus Graft's `file:line` AST spans) into Archify-compatible typed JSON IR (`architecture`, `workflow`, `sequence`, `delta`) and an interactive signal-flow schematic view supporting `Reach`, `Route`, `Lens`, and `SRC n` evidence drawers.
 
 ---
 
