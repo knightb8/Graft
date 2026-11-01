@@ -18,7 +18,9 @@
 | **viz** | **core** | 14 | `viz/core/archipelago_and_lod_labels-14.feature` | Visualizer Archipelago Blooms and Smart LOD Labels |
 | **viz** | **core** | 16 | `viz/core/bloom_rainbow_and_aggregation_toggles-16.feature` | Visualizer Bloom, Rainbow, and Parent Aggregation Toggles |
 | **viz** | **core** | 29 | `viz/core/circular_dependency_wheel-29.feature` | Circular Dependency Wheel (Chord Diagram) for Lifecycle Coupling |
+| **viz** | **core** | 34 | `viz/core/cosmos_cluster_combos_and_conduit_rollup-34.feature` | Interactive Cluster Combos and Multi-Link Conduit Rollup in Cosmos View |
 | **viz** | **core** | 22 | `viz/core/cosmos_gravity_presets_and_edge_bundling-22.feature` | Tunable Cosmos Gravity Presets, Support Sink Heuristics, and Hierarchical Edge Bundling |
+| **viz** | **core** | 33 | `viz/core/cosmos_radar_minimap_and_two_degree_focus-33.feature` | Cosmos Radar Minimap and Two-Degree Focus Halos |
 | **viz** | **core** | 23 | `viz/core/directional_blast_attenuation_and_sankey_subfolders-23.feature` | Directional Blast Attenuation, Causal Collider Zero-Decay Rules, and Sankey Suite Sub-Foldering |
 | **viz** | **core** | 27 | `viz/core/entity_event_system_and_columnar_stores-27.feature` | Entity Event System and Columnar TypedArray Stores |
 | **viz** | **core** | 15 | `viz/core/fa2_layout_and_bloom_scaling-15.feature` | Pure ForceAtlas2 Layout and Viewport-Scaled Archipelago Blooms |
@@ -30,7 +32,9 @@
 | **viz** | **core** | 28 | `viz/core/ishikawa_fishbone_diagram-28.feature` | Ishikawa Fishbone Cause-and-Effect Diagram for Focused Tripartite Lineage |
 | **viz** | **core** | 24 | `viz/core/relation_registry_and_degree_normalization-24.feature` | Unified Relation Registry and Degree-Normalized Edge Weights |
 | **viz** | **core** | 13 | `viz/core/sigma_webgl_migration-13.feature` | Sigma.js WebGL Graph Visualizer |
+| **viz** | **core** | 35 | `viz/core/smooth_layout_transition_tweening-35.feature` | Smooth Layout Transition Animation Tweening |
 | **viz** | **core** | 26 | `viz/core/stacked_flow_hierarchical_drilldown-26.feature` | Hierarchical Drill-Down and Crossing-Minimized Ordering in Stacked Flow Columns |
+| **viz** | **core** | 32 | `viz/core/stacked_flow_hierarchy_sorting_and_blast_consistency-32.feature` | Stacked Flow Intact Directory Hierarchy, Deterministic Sorting, Fixed Slots, and Blast Trace Consistency |
 | **viz** | **core** | 12 | `viz/core/transitive_edges-12.feature` | Transitive Edge Generation and Edge Visibility |
 | **viz** | **core** | 11 | `viz/core/tree_picker-11.feature` | Left Tree-View Picker Panel in Visualizer |
 | **viz** | **core** | 25 | `viz/core/two_level_stress_layout_and_preset_constraints-25.feature` | Two-Level Stress-SGD Organic Layout with Preset Constraints |

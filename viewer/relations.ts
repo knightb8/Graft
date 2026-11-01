@@ -299,8 +299,8 @@ export const RELATIONS: Record<CanonicalRelation, RelationDefinition> = {
         return blastLeafSink();
       },
       reverse: (inPhase: BlastPhase, includeReflected = false) => {
-        if (inPhase === "SEED" || inPhase === "UP_PROVENANCE" || inPhase === "DEP_IMPACT") {
-          return { weight: 0.95, nextPhase: "UP_PROVENANCE" };
+        if (inPhase === "SEED" || inPhase === "UP_PROVENANCE" || inPhase === "DEP_IMPACT" || inPhase === "DEP_PREREQ") {
+          return { weight: 0.9, nextPhase: "UP_PROVENANCE" };
         }
         if (includeReflected && inPhase === "DOWN_REALIZE") {
           return { weight: 0.82, nextPhase: "UP_PROVENANCE" };
@@ -313,9 +313,10 @@ export const RELATIONS: Record<CanonicalRelation, RelationDefinition> = {
           DOWN_REALIZE: { weight: 0.95, nextPhase: "DOWN_REALIZE" },
         },
         reverse: {
-          SEED: { weight: 0.95, nextPhase: "UP_PROVENANCE" },
-          UP_PROVENANCE: { weight: 0.95, nextPhase: "UP_PROVENANCE" },
-          DEP_IMPACT: { weight: 0.95, nextPhase: "UP_PROVENANCE" },
+          SEED: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
+          UP_PROVENANCE: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
+          DEP_IMPACT: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
+          DEP_PREREQ: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
         },
       },
     },
@@ -351,8 +352,8 @@ export const RELATIONS: Record<CanonicalRelation, RelationDefinition> = {
         return blastLeafSink();
       },
       reverse: (inPhase: BlastPhase, includeReflected = false) => {
-        if (inPhase === "SEED" || inPhase === "UP_PROVENANCE" || inPhase === "DEP_IMPACT") {
-          return { weight: 0.95, nextPhase: "UP_PROVENANCE" };
+        if (inPhase === "SEED" || inPhase === "UP_PROVENANCE" || inPhase === "DEP_IMPACT" || inPhase === "DEP_PREREQ") {
+          return { weight: 0.9, nextPhase: "UP_PROVENANCE" };
         }
         if (includeReflected && inPhase === "DOWN_REALIZE") {
           return { weight: 0.82, nextPhase: "UP_PROVENANCE" };
@@ -365,9 +366,10 @@ export const RELATIONS: Record<CanonicalRelation, RelationDefinition> = {
           DOWN_REALIZE: { weight: 1.0, nextPhase: "DOWN_REALIZE" },
         },
         reverse: {
-          SEED: { weight: 0.95, nextPhase: "UP_PROVENANCE" },
-          UP_PROVENANCE: { weight: 0.95, nextPhase: "UP_PROVENANCE" },
-          DEP_IMPACT: { weight: 0.95, nextPhase: "UP_PROVENANCE" },
+          SEED: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
+          UP_PROVENANCE: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
+          DEP_IMPACT: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
+          DEP_PREREQ: { weight: 0.9, nextPhase: "UP_PROVENANCE" },
         },
       },
     },
@@ -695,9 +697,15 @@ export const RELATIONS: Record<CanonicalRelation, RelationDefinition> = {
         }
         return blastLeafSink();
       },
-      reverse: () => blastLeafSink(),
+      reverse: (inPhase: BlastPhase) => {
+        if (inPhase === "SEED") {
+          return { weight: 0.55, nextPhase: "LEAF_SINK" };
+        }
+        return blastLeafSink();
+      },
       weights: {
         forward: { SEED: { weight: 0.55, nextPhase: "LEAF_SINK" } },
+        reverse: { SEED: { weight: 0.55, nextPhase: "LEAF_SINK" } },
       },
     },
     aliases: ["mentions", "ref", "links_to"],

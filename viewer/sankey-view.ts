@@ -13,6 +13,9 @@ import {
   classifyArtifactStage,
   computeSankeyColumns,
   orderBarsByBarycenter,
+  SankeySortOrder,
+  sortSankeyColumns,
+  applyBlastScoresToRibbons,
 } from "./sankey-engine.js";
 import { cvar, isLightTheme } from "./data.js";
 
@@ -63,6 +66,23 @@ export class SankeyView {
   public selectedBarIds: string[] | null = null;
   public hoveredBarId: string | null = null;
   public onSelect: (id: string | null) => void = () => {};
+  public sortOrder: SankeySortOrder = "barycenter";
+
+  scheduleRender(): void {
+    this.render();
+  }
+
+  rebuild(): void {
+    this.render();
+  }
+
+  recomputeBlastScores(): void {
+    // Blast scores are recomputed in render()
+  }
+
+  toggleDirExpand(dirPath: string): void {
+    this.toggleFolder(dirPath);
+  }
 
   /** Persistent user-dragged coordinate overrides per bar ID (`{ dx, dy }`). */
   public barOffsets = new Map<string, { dx: number; dy: number }>();
@@ -115,8 +135,31 @@ export class SankeyView {
 
   select(id: string | null): void {
     this.selectedId = id;
-    this.selectedBarIds = id ? [id] : null;
-    this.render();
+    if (!id) {
+      this.selectedBarIds = null;
+      this.recomputeBlastScores();
+      this.scheduleRender();
+      return;
+    }
+
+    let foundBar: SankeyBar | LayoutBar | undefined = this.lastLaidOutBars.get(id);
+    if (!foundBar) {
+      for (const bar of this.lastLaidOutBars.values()) {
+        if (bar.id === id || bar.dirPath === id) {
+          foundBar = bar;
+          break;
+        }
+      }
+    }
+
+    if (foundBar && (foundBar.id === id || foundBar.dirPath === id)) {
+      this.selectedBarIds = [...foundBar.memberIds];
+    } else {
+      this.selectedBarIds = [id];
+    }
+
+    this.recomputeBlastScores();
+    this.scheduleRender();
   }
 
   reset(): void {
@@ -190,19 +233,17 @@ export class SankeyView {
     if (!lb) return;
 
     const alreadySelected =
-      this.selectedId === lb.memberIds[0] &&
-      this.selectedBarIds?.length === lb.memberIds.length;
+      this.selectedId === lb.id ||
+      (this.selectedId === lb.memberIds[0] && this.selectedBarIds?.length === lb.memberIds.length);
 
     if (alreadySelected) {
-      this.selectedId = null;
-      this.selectedBarIds = null;
+      this.select(null);
       this.onSelect(null);
     } else {
-      this.selectedId = lb.memberIds[0] || lb.id;
-      this.selectedBarIds = [...lb.memberIds];
+      const selectTarget = lb.isGroup ? lb.id : (lb.memberIds[0] || lb.id);
+      this.select(selectTarget);
       this.onSelect(this.selectedId);
     }
-    this.render();
   }
 
   toggleFolder(folderPath: string): void {
@@ -515,11 +556,8 @@ export class SankeyView {
       this.collapsedDirs,
       this.minCouplingWeight,
       hierarchicalExpanded,
+      this.sortOrder,
     );
-
-    // Apply barycenter crossing minimization while keeping groups contiguous
-    const orderedColumns = orderBarsByBarycenter(sankey.columns, sankey.ribbons);
-    sankey.columns = orderedColumns;
 
     // Blast attenuation
     const focusSeeds =
@@ -776,7 +814,20 @@ export class SankeyView {
       const rKey = `${r.sourceBarId}->${r.targetBarId}`;
       const d = initialRibbonPaths.get(rKey) || "";
 
-      const isActiveBlast = blastResult !== null && src.inLineage && tgt.inLineage;
+      let hasActiveBlastEdge = false;
+      if (blastResult && blastResult.activeEdges) {
+        for (const u of src.memberIds) {
+          for (const v of tgt.memberIds) {
+            if (blastResult.activeEdges.has(`${u}->${v}`) || blastResult.activeEdges.has(`${v}->${u}`)) {
+              hasActiveBlastEdge = true;
+              break;
+            }
+          }
+          if (hasActiveBlastEdge) break;
+        }
+      }
+      r.inLineage = hasActiveBlastEdge;
+      const isActiveBlast = blastResult !== null && hasActiveBlastEdge;
       const isDimmed = blastResult !== null && !isActiveBlast;
       const ribbonEnergy = isActiveBlast ? Math.min(src.maxEnergy, tgt.maxEnergy) : 0;
 
@@ -803,12 +854,12 @@ export class SankeyView {
       const meta = STAGE_META[col.stage];
       const metaColor = getStageColor(col.stage);
       svgColumns += `<g class="sankey-col" data-stage="${col.stage}">`;
-      svgColumns += `<g class="sankey-col-header" data-stage="${col.stage}" transform="translate(${col.x}, ${col.headerY})" style="cursor:grab;">`;
+      svgColumns += `<g class="sankey-col-header" data-stage="${col.stage}" transform="translate(${col.x}, ${col.headerY})" style="cursor:default;">`;
       svgColumns += `<rect x="0" y="0" width="${colWidth}" height="46" rx="7" fill="var(--panel, #15181b)" stroke="${metaColor}66" stroke-width="1.2"/>`;
       svgColumns += `<text x="10" y="19" fill="${metaColor}" font-size="12" font-weight="700">⠿ ${this.esc(meta.title)}</text>`;
       svgColumns += `<text x="${colWidth - 10}" y="19" text-anchor="end" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="600">${col.total}</text>`;
       svgColumns += `<text x="10" y="36" fill="var(--muted, #8b9298)" font-size="10">${this.esc(meta.subtitle)}</text>`;
-      svgColumns += `<title>Drag header to reposition the ${this.esc(meta.title)} column</title>`;
+      svgColumns += `<title>${this.esc(meta.title)}: ${col.total} items</title>`;
       svgColumns += `</g>`;
 
       if (col.bars.length === 0) {
@@ -861,6 +912,9 @@ export class SankeyView {
         const isExpanded = this.isFolderExpanded(dirOrNodeKey);
 
         const chevronHitW = 24;
+        const depth = b.depth ?? 0;
+        const indentPx = b.isGroup ? 0 : Math.min(24, Math.max(0, (depth - 1) * 8));
+
         svgColumns += `<g class="sankey-bar" data-bar-id="${this.esc(b.id)}" data-dir-key="${this.esc(dirOrNodeKey)}" data-stage="${col.stage}" data-is-group="${b.isGroup ? "1" : "0"}" data-first-node="${this.esc(b.memberIds[0] || "")}" transform="translate(${b.x}, ${b.y})" opacity="${fillOpacity}">`;
         svgColumns += `<rect class="sankey-bar-bg" x="0" y="0" width="${b.w}" height="${b.h}" rx="5" fill="${isSeed ? `${metaColor}25` : "var(--panel, #181c20)"}" stroke="${strokeColor}" stroke-width="${strokeW}"${glowAttr}/>`;
         svgColumns += `<rect class="sankey-bar-stripe" x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "var(--amber, #fde047)" : metaColor}"/>`;
@@ -872,13 +926,13 @@ export class SankeyView {
           svgColumns += `</g>`;
           svgColumns += `<text x="${chevronHitW + 4}" y="${Math.min(b.h / 2 + 4, 18)}" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="700">${this.esc(shortLabel)}</text>`;
         } else {
-          svgColumns += `<text x="11" y="${Math.min(b.h / 2 + 4, 18)}" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="${isSeed ? "700" : isAffected ? "600" : "400"}">${this.esc(shortLabel)}</text>`;
+          svgColumns += `<text x="${11 + indentPx}" y="${Math.min(b.h / 2 + 4, 18)}" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="${isSeed ? "700" : isAffected ? "600" : "400"}">${this.esc(shortLabel)}</text>`;
         }
 
         if (badgeText) {
           svgColumns += `<text class="sankey-bar-badge" x="${b.w - 8}" y="${Math.min(b.h / 2 + 4, 18)}" text-anchor="end" fill="${badgeColor}" font-size="9.5" font-weight="700">${this.esc(badgeText)}</text>`;
         }
-        svgColumns += `<title>${this.esc(b.label)} (${b.memberCount} node${b.memberCount === 1 ? "" : "s"}${isAffected ? ` · Hop ${b.minHop} · Blast Energy ${Math.round(b.maxEnergy * 100)}%` : ""}${b.hasGap ? " — GAP: 0 linked tests/docs" : ""})\n• Click anywhere on bubble: Select & trace lineage blast\n• Right-click or Ctrl+click: Open menu (expand, collapse, hide)\n• Chevron ▸/▾ or Double-click: Toggle folder expansion\n• Drag: Move bubble</title>`;
+        svgColumns += `<title>${this.esc(b.label)} (${b.memberCount} node${b.memberCount === 1 ? "" : "s"}${isAffected ? ` · Hop ${b.minHop} · Blast Energy ${Math.round(b.maxEnergy * 100)}%` : ""}${b.hasGap ? " — GAP: 0 linked tests/docs" : ""})\n• Click anywhere on bubble: Select & trace lineage blast\n• Right-click or Ctrl+click: Open menu (expand, collapse, hide)\n• Chevron ▸/▾ or Double-click: Toggle folder expansion</title>`;
         svgColumns += `</g>`;
       }
       svgColumns += `</g>`;
@@ -930,6 +984,12 @@ export class SankeyView {
           <span style="font-weight:600; color:var(--accent, #38bdf8);">Stacked Lifecycle Flow</span>
           <button type="button" class="ptool-btn" id="sankeyGroupFolders" title="Roll up files & test suites into directory/domain bars">${collapsedCount > 0 ? `📁 Folders Grouped (${collapsedCount})` : "📁 Group by Folder"}</button>
           <button type="button" class="ptool-btn" id="sankeyExpandFiles" title="Expand all folders into individual files">📄 Expand All Files</button>
+          <select id="sankeySortOrder" class="ptool-select" style="background:var(--bg); color:var(--ink); border:1px solid var(--border); border-radius:5px; padding:2px 7px; font-size:11px; cursor:pointer;" title="Sort order for column bars">
+            <option value="barycenter" ${this.sortOrder === "barycenter" ? "selected" : ""}>Sort: Barycenter</option>
+            <option value="hierarchy" ${this.sortOrder === "hierarchy" ? "selected" : ""}>Sort: Directory Tree</option>
+            <option value="name" ${this.sortOrder === "name" ? "selected" : ""}>Sort: Name (A–Z)</option>
+            <option value="weight" ${this.sortOrder === "weight" ? "selected" : ""}>Sort: Coupling Weight</option>
+          </select>
           <input type="search" id="sankeyDirFilter" value="${this.esc(this.dirFilterQuery)}" placeholder="Filter folders/files (e.g. test/viz, src/graph)…" style="width:190px; background:var(--bg); color:var(--ink); border:1px solid var(--border); border-radius:5px; padding:2px 7px; font-size:11px;" title="Filter columns by directory or file substring (or use the left Files tree panel)">
           ${hiddenDirCount > 0 ? `<button type="button" class="ptool-btn" id="sankeyRestoreHidden" style="color:var(--accent);" title="Restore right-clicked hidden folders/bars">👁 Restore Hidden (${hiddenDirCount})</button>` : ""}
           <label style="display:flex; align-items:center; gap:4px; cursor:pointer; margin-left:2px;" title="Highlight code modules with 0 linked tests or docs">
@@ -946,7 +1006,7 @@ export class SankeyView {
           </label>
           ${hasCustomLayout ? `<button type="button" class="ptool-btn" id="sankeyResetLayout" title="Reset dragged bars, columns, and pan/zoom">↺ Reset Layout</button>` : ""}
           ${focusSeeds ? `<button type="button" class="ptool-btn" id="sankeyClearTrace" style="color:var(--amber); font-weight:600;">✕ Clear Blast Trace</button>` : ""}
-          <span style="color:var(--muted, #8b9298); font-size:10px; margin-left:auto;">💡 Click bubble: Blast Trace · Dbl-click / ▸: Expand · Right-click: Hide · Drag: Move</span>
+          <span style="color:var(--muted, #8b9298); font-size:10px; margin-left:auto;">💡 Click bubble: Blast Trace · Dbl-click / ▸: Expand · Right-click: Menu · Canvas: Pan & Zoom</span>
         </div>
         <div class="sankey-canvas-wrap" style="flex:1; width:100%; height:100%; overflow:auto; position:relative;">
           <svg class="sankey-svg" width="${W}" height="${totalSvgH}" viewBox="0 0 ${W} ${totalSvgH}" style="min-width:${W}px; min-height:${totalSvgH}px; overflow:visible; display:block; user-select:none; cursor:grab;">
@@ -966,6 +1026,12 @@ export class SankeyView {
     });
     this.container.querySelector("#sankeyExpandFiles")?.addEventListener("click", () => {
       this.expandAllFolders();
+    });
+    const sortSelect = this.container.querySelector<HTMLSelectElement>("#sankeySortOrder");
+    sortSelect?.addEventListener("change", (ev) => {
+      this.sortOrder = (ev.target as HTMLSelectElement).value as SankeySortOrder;
+      this.rebuild();
+      this.scheduleRender();
     });
     const filterInput = this.container.querySelector<HTMLInputElement>("#sankeyDirFilter");
     filterInput?.addEventListener("input", () => {
@@ -1014,7 +1080,7 @@ export class SankeyView {
       clearBtn.addEventListener("click", doClear);
     }
 
-    // Dynamic live ribbon refresh during dragging
+    // Dynamic live ribbon refresh
     const ribbonEls = Array.from(this.container.querySelectorAll<SVGPathElement>(".sankey-ribbon"));
     const refreshLiveRibbons = () => {
       const updatedPaths = computeAllRibbonPaths();
@@ -1043,19 +1109,11 @@ export class SankeyView {
       });
     });
 
-    // Bar dragging + click-vs-dblclick disambiguation + context menu
+    // Bar immediate click, double-click, and context menu (no drag-timer delays)
     this.container.querySelectorAll<SVGGElement>(".sankey-bar").forEach((el) => {
       const barId = el.getAttribute("data-bar-id") || "";
-      const dirKey = el.getAttribute("data-dir-key") || "";
       const lb = barLayout.get(barId);
       if (!lb) return;
-
-      let dragging = false;
-      let moved = false;
-      let startClientX = 0;
-      let startClientY = 0;
-      let startOffX = 0;
-      let startOffY = 0;
 
       const handleContext = (ev: MouseEvent) => {
         ev.preventDefault();
@@ -1065,167 +1123,45 @@ export class SankeyView {
 
       el.addEventListener("contextmenu", handleContext);
 
-      el.addEventListener("click", (ev: MouseEvent) => {
-        if (ev.ctrlKey || ev.metaKey) {
-          handleContext(ev);
+      let lastHandledTime = 0;
+      const doClick = (ev: Event) => {
+        ev.stopPropagation();
+        if ((ev as MouseEvent).ctrlKey || (ev as MouseEvent).metaKey) {
+          handleContext(ev as MouseEvent);
+          return;
         }
+        const now = Date.now();
+        if (now - lastHandledTime < 50) return;
+        lastHandledTime = now;
+
+        if (now - this.lastClickTime < 320 && this.lastClickBarId === barId) {
+          this.lastClickTime = 0;
+          this.lastClickBarId = "";
+          this.handleBarDoubleClick(barId);
+        } else {
+          this.lastClickTime = now;
+          this.lastClickBarId = barId;
+          this.handleBarClick(barId);
+        }
+      };
+
+      el.addEventListener("pointerdown", (ev: PointerEvent) => {
+        if (ev.button !== undefined && ev.button !== 0) return;
+        ev.stopPropagation();
       });
+
+      el.addEventListener("pointerup", (ev: PointerEvent) => {
+        if (ev.button !== undefined && ev.button !== 0) return;
+        doClick(ev);
+      });
+
+      el.addEventListener("click", doClick);
 
       el.addEventListener("dblclick", (ev: MouseEvent) => {
         ev.preventDefault();
         ev.stopPropagation();
         this.handleBarDoubleClick(barId);
       });
-
-      el.addEventListener("pointerdown", (ev: PointerEvent) => {
-        if (ev.button !== 0) return;
-        ev.stopPropagation();
-        dragging = true;
-        moved = false;
-        startClientX = ev.clientX;
-        startClientY = ev.clientY;
-        const curOff = this.barOffsets.get(barId) ?? { dx: 0, dy: 0 };
-        startOffX = curOff.dx;
-        startOffY = curOff.dy;
-        // Do not re-parent DOM node on pointerdown to keep click and pointer capture intact!
-        try {
-          el.setPointerCapture(ev.pointerId);
-        } catch {
-          // ignore in mock environments
-        }
-      });
-
-      el.addEventListener("pointermove", (ev: PointerEvent) => {
-        if (!dragging) return;
-        ev.stopPropagation();
-        const rawDx = ev.clientX - startClientX;
-        const rawDy = ev.clientY - startClientY;
-        if (!moved) {
-          if (Math.hypot(rawDx, rawDy) > 8) {
-            moved = true;
-            el.parentElement?.appendChild(el);
-            el.classList.add("is-dragging");
-          } else {
-            return;
-          }
-        }
-        const dx = rawDx / this.zoom;
-        const dy = rawDy / this.zoom;
-        const nextOff = { dx: Math.round(startOffX + dx), dy: Math.round(startOffY + dy) };
-        this.barOffsets.set(barId, nextOff);
-
-        const colOff = this.colOffsets.get(lb.stage) ?? { dx: 0, dy: 0 };
-        lb.x = lb.baseX + colOff.dx + nextOff.dx;
-        lb.y = lb.baseY + colOff.dy + nextOff.dy;
-        el.setAttribute("transform", `translate(${lb.x}, ${lb.y})`);
-        refreshLiveRibbons();
-      });
-
-      const endBarDrag = (ev: PointerEvent) => {
-        if (!dragging) return;
-        ev.stopPropagation();
-        dragging = false;
-        el.classList.remove("is-dragging");
-        try {
-          el.releasePointerCapture(ev.pointerId);
-        } catch {
-          // ignore
-        }
-        if (!moved) {
-          if (ev.ctrlKey || ev.metaKey) return;
-          const now = Date.now();
-          if (now - this.lastClickTime < 320 && this.lastClickBarId === barId) {
-            // Rapid second click within 320ms on the same bubble: DOUBLE CLICK!
-            this.lastClickTime = 0;
-            this.lastClickBarId = "";
-            this.handleBarDoubleClick(barId);
-          } else {
-            // First click: record time and immediately trigger single-click selection
-            this.lastClickTime = now;
-            this.lastClickBarId = barId;
-            this.handleBarClick(barId);
-          }
-        } else {
-          this.render();
-        }
-      };
-
-      el.addEventListener("pointerup", endBarDrag);
-      el.addEventListener("pointercancel", endBarDrag);
-    });
-
-    // Column Header Dragging
-    this.container.querySelectorAll<SVGGElement>(".sankey-col-header").forEach((headerEl) => {
-      const stage = (headerEl.getAttribute("data-stage") || "") as ArtifactStage;
-      const colObj = stageColumns.find((c) => c.stage === stage);
-      if (!colObj) return;
-
-      let draggingCol = false;
-      let startClientX = 0;
-      let startClientY = 0;
-      let startColX = 0;
-      let startColY = 0;
-
-      headerEl.addEventListener("pointerdown", (ev: PointerEvent) => {
-        if (ev.button !== 0) return;
-        ev.stopPropagation();
-        draggingCol = true;
-        startClientX = ev.clientX;
-        startClientY = ev.clientY;
-        const curOff = this.colOffsets.get(stage) ?? { dx: 0, dy: 0 };
-        startColX = curOff.dx;
-        startColY = curOff.dy;
-        headerEl.style.cursor = "grabbing";
-        try {
-          headerEl.setPointerCapture(ev.pointerId);
-        } catch {
-          // ignore
-        }
-      });
-
-      headerEl.addEventListener("pointermove", (ev: PointerEvent) => {
-        if (!draggingCol) return;
-        ev.stopPropagation();
-        const dx = (ev.clientX - startClientX) / this.zoom;
-        const dy = (ev.clientY - startClientY) / this.zoom;
-        const nextOff = { dx: Math.round(startColX + dx), dy: Math.round(startColY + dy) };
-        this.colOffsets.set(stage, nextOff);
-
-        colObj.x = colObj.baseX + nextOff.dx;
-        colObj.headerY = colObj.baseHeaderY + nextOff.dy;
-        headerEl.setAttribute("transform", `translate(${colObj.x}, ${colObj.headerY})`);
-
-        for (const lb of colObj.bars) {
-          const barOff = this.barOffsets.get(lb.id) ?? { dx: 0, dy: 0 };
-          lb.x = lb.baseX + nextOff.dx + barOff.dx;
-          lb.y = lb.baseY + nextOff.dy + barOff.dy;
-        }
-        const colGroup = headerEl.parentElement;
-        colGroup?.querySelectorAll<SVGGElement>(".sankey-bar").forEach((barEl) => {
-          const bid = barEl.getAttribute("data-bar-id") || "";
-          const lb = barLayout.get(bid);
-          if (lb) {
-            barEl.setAttribute("transform", `translate(${lb.x}, ${lb.y})`);
-          }
-        });
-        refreshLiveRibbons();
-      });
-
-      const endColDrag = (ev: PointerEvent) => {
-        if (!draggingCol) return;
-        ev.stopPropagation();
-        draggingCol = false;
-        headerEl.style.cursor = "grab";
-        try {
-          headerEl.releasePointerCapture(ev.pointerId);
-        } catch {
-          // ignore
-        }
-        this.render();
-      };
-
-      headerEl.addEventListener("pointerup", endColDrag);
-      headerEl.addEventListener("pointercancel", endColDrag);
     });
 
     // Background Pan & Wheel Zoom

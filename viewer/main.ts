@@ -274,7 +274,7 @@ function showDetail(id: string | null): void {
 }
 
 view.onSelect = (id) => {
-  sankeyView.selectedId = id;
+  sankeyView.select(id);
   fishboneView.setSelectedNode(id);
   wheelView.selectedNodeId = id;
   showDetail(id);
@@ -290,7 +290,7 @@ sankeyView.onSelect = (id) => {
 
 fishboneView.onSelect = (id) => {
   view.selected = id;
-  sankeyView.selectedId = id;
+  sankeyView.select(id);
   wheelView.selectedNodeId = id;
   view.restyle();
   showDetail(id);
@@ -298,7 +298,7 @@ fishboneView.onSelect = (id) => {
 
 wheelView.onSelect = (id) => {
   view.selected = id;
-  sankeyView.selectedId = id;
+  sankeyView.select(id);
   fishboneView.setSelectedNode(id);
   view.restyle();
   showDetail(id);

@@ -400,6 +400,9 @@ export interface SankeyBar {
   hasGap?: boolean;
   rawNode?: any;
   parentDir?: string;
+  depth?: number;
+  dirPath?: string;
+  isExpandedHeader?: boolean;
 }
 
 export interface SankeyRibbon {
@@ -408,6 +411,7 @@ export interface SankeyRibbon {
   sourceStage: ArtifactStage;
   targetStage: ArtifactStage;
   weight: number;
+  inLineage?: boolean;
 }
 
 export interface SankeyColumn {
@@ -441,6 +445,7 @@ export interface BlastAttenuationNode {
 export interface BlastAttenuationResult {
   nodes: Map<string, BlastAttenuationNode>;
   decayPerHop: number;
+  activeEdges: Set<string>;
 }
 
 export interface BlastTransitionEval {
@@ -477,8 +482,14 @@ export function computeBlastAttenuation(
 ): BlastAttenuationResult {
   const seeds = typeof seedIds === "string" ? [seedIds] : Array.from(seedIds);
   const result = new Map<string, BlastAttenuationNode>();
+  const activeEdges = new Set<string>();
   if (seeds.length === 0) {
-    return { nodes: result, decayPerHop };
+    return { nodes: result, decayPerHop, activeEdges };
+  }
+
+  const nodeById = new Map<string, { id: string; type?: string; sources?: string[] }>();
+  for (const n of nodes) {
+    nodeById.set(n.id, n);
   }
 
   interface DirectedEdgeStep {
@@ -526,19 +537,42 @@ export function computeBlastAttenuation(
     const fanoutPenalty = curr.hop === 0 ? 1.0 : 1.0 / (1.0 + 0.05 * Math.max(0, deg - 5));
 
     for (const step of nbrs) {
-      const { weight: relWeight, nextPhase } = evaluateDirectionalBlastStep(
+      let evalRes = evaluateDirectionalBlastStep(
         step.relation,
         step.direction,
         curr.phase,
         includeReflected,
       );
 
-      if (relWeight <= 0) continue;
+      // Downstream verification / docs sink discovery:
+      // When reverse uses/calls/depends_on from DOWN_REALIZE or SEED reaches tests or docs stage
+      if (evalRes.weight <= 0) {
+        if (
+          (curr.phase === "DOWN_REALIZE" || curr.phase === "SEED") &&
+          step.direction === "reverse" &&
+          (step.relation === "uses" || step.relation === "calls" || step.relation === "depends_on")
+        ) {
+          const targetNode = nodeById.get(step.neighbor) || { id: step.neighbor };
+          const st = classifyArtifactStage(targetNode);
+          if (st === "tests" || st === "docs") {
+            evalRes = { weight: 0.85, nextPhase: "LEAF_SINK" };
+          }
+        }
+      }
+
+      if (evalRes.weight <= 0) continue;
+
+      const relWeight = evalRes.weight;
+      const nextPhase = evalRes.nextPhase;
 
       const nextHop = curr.hop + 1;
       const hopDecay = nextHop === 1 ? 1.0 : decayPerHop;
       const rawEnergy = curr.energy * hopDecay * relWeight * fanoutPenalty;
       const nextEnergy = Number(Math.max(0.14, Math.min(1.0, rawEnergy)).toFixed(3));
+
+      // Record active bidirectional blast edge between the current node and neighbor
+      activeEdges.add(`${curr.id}->${step.neighbor}`);
+      activeEdges.add(`${step.neighbor}->${curr.id}`);
 
       const stateKey = `${step.neighbor}:${nextPhase}`;
       const prevStateEnergy = bestStateEnergy.get(stateKey) ?? 0;
@@ -568,7 +602,7 @@ export function computeBlastAttenuation(
     }
   }
 
-  return { nodes: result, decayPerHop };
+  return { nodes: result, decayPerHop, activeEdges };
 }
 
 /**
@@ -596,6 +630,19 @@ export function folderGroupKeyOfNode(node: { id: string; sources?: string[] }): 
     return dir;
   }
   return null;
+}
+
+export function getNodeDirPath(node: { id: string; sources?: string[] }): string {
+  const raw = node.sources?.[0]?.split(" · ")[0]?.trim() || node.id.split("#")[0] || "";
+  const fp = raw.replace(/\\/g, "/");
+  const parts = fp.split("/").filter(Boolean);
+  if (parts.length <= 1) return "(root)";
+  return parts.slice(0, -1).join("/");
+}
+
+export function getDirDepth(dirPath?: string): number {
+  if (!dirPath || dirPath === "(root)") return 0;
+  return dirPath.split("/").filter(Boolean).length;
 }
 
 export function getNodePathSegments(node: { id: string; sources?: string[] }): {
@@ -717,6 +764,7 @@ function resolveDirChildren(
 
   // 1. Direct files in this directory (preserve contiguous group)
   for (const f of dir.files) {
+    const parentDir = dir.path || parentDirPath || "(root)";
     result.push({
       id: f.node.id,
       label: f.node.name || f.filename || f.node.id,
@@ -726,14 +774,33 @@ function resolveDirChildren(
       memberIds: [f.node.id],
       weight: 1,
       rawNode: f.node,
-      parentDir: dir.path || parentDirPath,
+      parentDir,
+      depth: getDirDepth(parentDir),
     });
   }
 
   // 2. Immediate subdirectories (contiguous grouping)
   for (const sub of dir.subdirs.values()) {
+    const subParentDir = dir.path || parentDirPath || "(root)";
+    const subDepth = getDirDepth(subParentDir);
+
     if (isDirExpanded(sub.path, sub.segment, expandedDirs, collapsedDirs)) {
-      // Expanded: recursively emit immediate children contiguously at this slot
+      // Expanded: emit collapsible directory header bar BEFORE children
+      result.push({
+        id: `dir:${stage}:${sub.path}`,
+        label: sub.path,
+        stage,
+        isGroup: true,
+        isExpandedHeader: true,
+        memberCount: sub.allNodes.length,
+        memberIds: sub.allNodes.map((n) => n.id),
+        weight: Math.max(1, sub.allNodes.length),
+        dirPath: sub.path,
+        parentDir: subParentDir,
+        depth: subDepth,
+      });
+
+      // Recursively emit immediate children contiguously at this slot
       const children = resolveDirChildren(sub, stage, expandedDirs, collapsedDirs, sub.path);
       result.push(...children);
     } else {
@@ -743,10 +810,13 @@ function resolveDirChildren(
         label: sub.path,
         stage,
         isGroup: true,
+        isExpandedHeader: false,
         memberCount: sub.allNodes.length,
         memberIds: sub.allNodes.map((n) => n.id),
-        weight: sub.allNodes.length,
-        parentDir: dir.path || parentDirPath,
+        weight: Math.max(1, sub.allNodes.length),
+        dirPath: sub.path,
+        parentDir: subParentDir,
+        depth: subDepth,
       });
     }
   }
@@ -765,6 +835,7 @@ export function computeSankeyColumns(
   collapsedDirs: Set<string> = new Set(),
   minCouplingWeight: number = 1,
   expandedDirs?: Set<string>,
+  sortOrder?: SankeySortOrder,
 ): SankeyGraph {
   function getFilePath(n: { id: string; sources?: string[] }): string {
     const raw = n.sources?.[0]?.split(" · ")[0]?.trim() || n.id.split("#")[0] || "";
@@ -825,10 +896,13 @@ export function computeSankeyColumns(
               label: singleTop.path,
               stage,
               isGroup: true,
+              isExpandedHeader: false,
               memberCount: singleTop.allNodes.length,
               memberIds: singleTop.allNodes.map((n) => n.id),
               weight: singleTop.allNodes.length,
-              parentDir: "",
+              parentDir: "(root)",
+              dirPath: singleTop.path,
+              depth: 0,
             },
           ];
         }
@@ -863,15 +937,20 @@ export function computeSankeyColumns(
 
         let bar = barsMap.get(barId);
         if (!bar) {
+          const parentDir = colDir || getNodeDirPath(node);
           bar = {
             id: barId,
             label,
             stage,
             isGroup,
+            isExpandedHeader: false,
             memberCount: 0,
             memberIds: [],
             weight: 0,
             rawNode: isGroup ? undefined : node,
+            parentDir,
+            dirPath: isGroup ? colDir || undefined : undefined,
+            depth: getDirDepth(parentDir),
           };
           barsMap.set(barId, bar);
         }
@@ -955,6 +1034,11 @@ export function computeSankeyColumns(
     };
   }
 
+  // Sort columns according to sortOrder if specified (preserving directory hierarchy)
+  if (sortOrder) {
+    sortSankeyColumns(columns, ribbons, sortOrder);
+  }
+
   return {
     columns,
     ribbons,
@@ -1015,10 +1099,181 @@ export function countCrossings(
   return crossings;
 }
 
+export type SankeySortOrder = "barycenter" | "hierarchy" | "name" | "weight";
+
+export interface HierarchicalItem {
+  bar: SankeyBar;
+  children: HierarchicalItem[];
+}
+
+export function buildHierarchicalItems(bars: SankeyBar[]): HierarchicalItem[] {
+  const result: HierarchicalItem[] = [];
+  const stack: HierarchicalItem[] = [];
+
+  for (const bar of bars) {
+    const item: HierarchicalItem = { bar, children: [] };
+    if (bar.isExpandedHeader && bar.dirPath) {
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        if (top.bar.dirPath && (bar.parentDir === top.bar.dirPath || bar.parentDir?.startsWith(top.bar.dirPath + "/"))) {
+          break;
+        }
+        stack.pop();
+      }
+      if (stack.length > 0) {
+        stack[stack.length - 1].children.push(item);
+      } else {
+        result.push(item);
+      }
+      stack.push(item);
+    } else {
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        if (top.bar.dirPath && (bar.parentDir === top.bar.dirPath || bar.parentDir?.startsWith(top.bar.dirPath + "/"))) {
+          break;
+        }
+        stack.pop();
+      }
+      if (stack.length > 0) {
+        stack[stack.length - 1].children.push(item);
+      } else {
+        result.push(item);
+      }
+    }
+  }
+  return result;
+}
+
+export function flattenHierarchicalItems(items: HierarchicalItem[]): SankeyBar[] {
+  const result: SankeyBar[] = [];
+  for (const item of items) {
+    result.push(item.bar);
+    if (item.children.length > 0) {
+      result.push(...flattenHierarchicalItems(item.children));
+    }
+  }
+  return result;
+}
+
+function getAllDescendantBars(item: HierarchicalItem): SankeyBar[] {
+  const result: SankeyBar[] = [item.bar];
+  for (const ch of item.children) {
+    result.push(...getAllDescendantBars(ch));
+  }
+  return result;
+}
+
+function getItemBarycenter(item: HierarchicalItem, barBc: Map<string, number>): number {
+  const bars = getAllDescendantBars(item);
+  let sum = 0;
+  for (const b of bars) {
+    sum += barBc.get(b.id) ?? 0;
+  }
+  return sum / bars.length;
+}
+
+interface SiblingCluster {
+  parentDir: string;
+  items: HierarchicalItem[];
+  label: string;
+  dirPath: string;
+  weight: number;
+}
+
+function clusterItemsByParentDir(items: HierarchicalItem[]): SiblingCluster[] {
+  const clusters: SiblingCluster[] = [];
+  let cur: SiblingCluster | null = null;
+
+  for (const it of items) {
+    const p = it.bar.parentDir || "(root)";
+    if (!cur || cur.parentDir !== p) {
+      cur = {
+        parentDir: p,
+        items: [it],
+        label: it.bar.isExpandedHeader ? it.bar.label : p,
+        dirPath: it.bar.dirPath ?? p,
+        weight: it.bar.weight,
+      };
+      clusters.push(cur);
+    } else {
+      cur.items.push(it);
+      cur.weight += it.bar.weight;
+    }
+  }
+  return clusters;
+}
+
+function sortHierarchicalItems(
+  items: HierarchicalItem[],
+  sortOrder: SankeySortOrder,
+  barBc?: Map<string, number>,
+): HierarchicalItem[] {
+  if (items.length <= 1 && (items.length === 0 || items[0].children.length === 0)) {
+    return items;
+  }
+
+  // 1. Recursively sort children of each item
+  for (const it of items) {
+    if (it.children.length > 0) {
+      it.children = sortHierarchicalItems(it.children, sortOrder, barBc);
+    }
+  }
+
+  // 2. Cluster sibling items by parentDir to keep directory groups contiguous
+  const clusters = clusterItemsByParentDir(items);
+
+  // 3. Sort items within each cluster
+  for (const cluster of clusters) {
+    cluster.items.sort((a, b) => {
+      switch (sortOrder) {
+        case "name":
+          return a.bar.label.localeCompare(b.bar.label);
+        case "weight":
+          return (b.bar.weight - a.bar.weight) || a.bar.label.localeCompare(b.bar.label);
+        case "hierarchy": {
+          const pathA = a.bar.dirPath ?? a.bar.parentDir ?? "";
+          const pathB = b.bar.dirPath ?? b.bar.parentDir ?? "";
+          return pathA.localeCompare(pathB) || a.bar.label.localeCompare(b.bar.label);
+        }
+        case "barycenter":
+        default: {
+          const bcA = barBc ? getItemBarycenter(a, barBc) : 0;
+          const bcB = barBc ? getItemBarycenter(b, barBc) : 0;
+          return (bcA - bcB) || a.bar.label.localeCompare(b.bar.label);
+        }
+      }
+    });
+  }
+
+  // 4. Sort the clusters themselves
+  clusters.sort((cA, cB) => {
+    switch (sortOrder) {
+      case "name":
+        return cA.label.localeCompare(cB.label);
+      case "weight":
+        return (cB.weight - cA.weight) || cA.label.localeCompare(cB.label);
+      case "hierarchy":
+        return cA.dirPath.localeCompare(cB.dirPath) || cA.label.localeCompare(cB.label);
+      case "barycenter":
+      default: {
+        const bcA = barBc
+          ? cA.items.reduce((s, it) => s + getItemBarycenter(it, barBc), 0) / cA.items.length
+          : 0;
+        const bcB = barBc
+          ? cB.items.reduce((s, it) => s + getItemBarycenter(it, barBc), 0) / cB.items.length
+          : 0;
+        return (bcA - bcB) || cA.label.localeCompare(cB.label);
+      }
+    }
+  });
+
+  return clusters.flatMap((c) => c.items);
+}
+
 /**
  * Barycenter crossing minimization:
  * Sorts bars within stage columns using iterative barycenter sweeps.
- * Sibling child groups are preserved contiguously.
+ * Sibling child groups and expanded directory subtrees are preserved contiguously.
  */
 export function orderBarsByBarycenter(
   columns: Record<ArtifactStage, SankeyColumn>,
@@ -1077,41 +1332,9 @@ export function orderBarsByBarycenter(
       barBc.set(b.id, sumW > 0 ? sumWPos / sumW : idx);
     });
 
-    // Partition into contiguous blocks by parent directory
-    interface BarBlock {
-      parentDir?: string;
-      bars: SankeyBar[];
-      bc: number;
-    }
-
-    const blocks: BarBlock[] = [];
-    let curBlock: BarBlock | null = null;
-
-    for (const b of bars) {
-      if (!curBlock || (b.parentDir && curBlock.parentDir !== b.parentDir)) {
-        curBlock = { parentDir: b.parentDir, bars: [b], bc: barBc.get(b.id) ?? 0 };
-        blocks.push(curBlock);
-      } else {
-        curBlock.bars.push(b);
-      }
-    }
-
-    // Sort bars within each block by barycenter, then update block barycenter
-    for (const blk of blocks) {
-      blk.bars.sort((a, b) => {
-        const bcA = barBc.get(a.id) ?? 0;
-        const bcB = barBc.get(b.id) ?? 0;
-        return bcA - bcB || a.label.localeCompare(b.label);
-      });
-      const sum = blk.bars.reduce((s, b) => s + (barBc.get(b.id) ?? 0), 0);
-      blk.bc = sum / blk.bars.length;
-    }
-
-    // Sort blocks by block barycenter
-    blocks.sort((a, b) => a.bc - b.bc);
-
-    // Flatten back into column
-    result[stage].bars = blocks.flatMap((blk) => blk.bars);
+    const hierarchical = buildHierarchicalItems(bars);
+    const sorted = sortHierarchicalItems(hierarchical, "barycenter", barBc);
+    result[stage].bars = flattenHierarchicalItems(sorted);
   };
 
   for (let pass = 0; pass < passes; pass++) {
@@ -1130,4 +1353,87 @@ export function orderBarsByBarycenter(
   }
 
   return result;
+}
+
+export function sortSankeyColumns(
+  columns: SankeyColumn[] | Record<ArtifactStage, SankeyColumn>,
+  ribbons: SankeyRibbon[],
+  sortOrder: SankeySortOrder = "barycenter",
+): void {
+  const colMap: Record<ArtifactStage, SankeyColumn> = Array.isArray(columns)
+    ? (Object.fromEntries(columns.map((c) => [c.stage, c])) as any)
+    : columns;
+
+  if (sortOrder === "barycenter") {
+    const ordered = orderBarsByBarycenter(colMap, ribbons);
+    for (const st of STAGE_ORDER) {
+      if (colMap[st] && ordered[st]) {
+        colMap[st].bars = ordered[st].bars;
+      }
+    }
+    return;
+  }
+
+  for (const st of STAGE_ORDER) {
+    const col = colMap[st];
+    if (!col || col.bars.length <= 1) continue;
+    const hierarchical = buildHierarchicalItems(col.bars);
+    const sorted = sortHierarchicalItems(hierarchical, sortOrder);
+    col.bars = flattenHierarchicalItems(sorted);
+  }
+}
+
+export function applyBlastScoresToRibbons(
+  ribbons: SankeyRibbon[],
+  columns: Record<ArtifactStage, SankeyColumn> | SankeyColumn[],
+  blastResult: BlastAttenuationResult | null,
+): void {
+  const colMap: Record<ArtifactStage, SankeyColumn> = Array.isArray(columns)
+    ? (Object.fromEntries(columns.map((c) => [c.stage, c])) as any)
+    : columns;
+
+  const barMap = new Map<string, SankeyBar>();
+  for (const st of STAGE_ORDER) {
+    for (const b of colMap[st]?.bars || []) {
+      barMap.set(b.id, b);
+    }
+  }
+
+  for (const r of ribbons) {
+    const src = barMap.get(r.sourceBarId);
+    const tgt = barMap.get(r.targetBarId);
+    if (!src || !tgt || !blastResult || !blastResult.activeEdges) {
+      r.inLineage = false;
+      continue;
+    }
+
+    let active = false;
+    for (const u of src.memberIds) {
+      for (const v of tgt.memberIds) {
+        if (blastResult.activeEdges.has(`${u}->${v}`) || blastResult.activeEdges.has(`${v}->${u}`)) {
+          active = true;
+          break;
+        }
+      }
+      if (active) break;
+    }
+    r.inLineage = active;
+  }
+}
+
+export interface SankeyFilterOptions {
+  collapsedDirs?: Set<string>;
+  expandedDirs?: Set<string>;
+  minCouplingWeight?: number;
+  sortOrder?: SankeySortOrder;
+}
+
+export function buildSankeyData(
+  nodes: Array<{ id: string; name?: string; type?: string; sources?: string[]; childCount?: number }>,
+  edges: Array<{ source: string; target: string; relation?: string }>,
+  options: SankeyFilterOptions = {},
+): SankeyGraph {
+  const collapsed = options.collapsedDirs ?? new Set();
+  const minW = options.minCouplingWeight ?? 1;
+  return computeSankeyColumns(nodes, edges, collapsed, minW, options.expandedDirs, options.sortOrder);
 }

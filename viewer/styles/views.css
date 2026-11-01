@@ -37,3 +37,21 @@
 .sankey-chevron-hit:hover rect {
   fill: rgba(255, 255, 255, 0.16);
 }
+
+/* Cosmos Overview Radar Minimap (Lanum Ch. 6, Fig 6.4) */
+canvas.cosmos-minimap {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  z-index: 22;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38);
+  cursor: crosshair;
+  opacity: 0.88;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+canvas.cosmos-minimap:hover {
+  opacity: 1;
+  border-color: var(--accent, #38bdf8);
+}

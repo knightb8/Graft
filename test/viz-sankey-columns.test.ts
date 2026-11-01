@@ -5,6 +5,13 @@ import {
   computeSankeyColumns,
   orderBarsByBarycenter,
   countCrossings,
+  computeBlastAttenuation,
+  sortSankeyColumns,
+  applyBlastScoresToRibbons,
+  buildSankeyData,
+  getNodeDirPath,
+  getDirDepth,
+  SankeySortOrder,
 } from "../viewer/sankey.js";
 
 // Helper to create a minimal DOM container mock for testing
@@ -334,4 +341,207 @@ test("Directional blast step transitions match canonical RELATIONS registry rule
   const colliderRev = evaluateDirectionalBlastStep("uses", "reverse", "DEP_PREREQ");
   assert.equal(colliderRev.weight, 0.0);
   assert.equal(colliderRev.nextPhase, "LEAF_SINK");
+});
+
+test("Blast trace propagates consistently upstream from tests through code to specs and downstream from specs through code to tests", async () => {
+  const nodes = [
+    { id: "docs/adr/0001-auth.md", type: "adr", sources: ["docs/adr/0001-auth.md"] },
+    { id: "features/auth/login.feature", type: "feature", sources: ["features/auth/login.feature"] },
+    { id: "src/auth/service.ts", type: "code", sources: ["src/auth/service.ts"] },
+    { id: "test/auth/service.test.ts", type: "test", sources: ["test/auth/service.test.ts"] },
+    { id: "src/unrelated/logger.ts", type: "code", sources: ["src/unrelated/logger.ts"] },
+  ];
+  const edges = [
+    { source: "docs/adr/0001-auth.md", target: "features/auth/login.feature", relation: "influences" },
+    { source: "features/auth/login.feature", target: "src/auth/service.ts", relation: "covers" },
+    { source: "test/auth/service.test.ts", target: "src/auth/service.ts", relation: "uses" },
+    { source: "src/unrelated/logger.ts", target: "src/auth/service.ts", relation: "uses" },
+  ];
+
+  // Upstream: selecting Test propagates upstream through Code to Spec and ADR
+  const upBlast = computeBlastAttenuation(["test/auth/service.test.ts"], nodes, edges);
+  assert.ok(upBlast.nodes.has("test/auth/service.test.ts"), "Test is seed");
+  assert.equal(upBlast.nodes.get("test/auth/service.test.ts")!.phase, "SEED");
+  assert.ok(upBlast.nodes.has("src/auth/service.ts"), "Code reached as DEP_PREREQ");
+  assert.equal(upBlast.nodes.get("src/auth/service.ts")!.phase, "DEP_PREREQ");
+  assert.ok(upBlast.nodes.has("features/auth/login.feature"), "Spec reached as UP_PROVENANCE");
+  assert.equal(upBlast.nodes.get("features/auth/login.feature")!.phase, "UP_PROVENANCE");
+  assert.ok(upBlast.nodes.has("docs/adr/0001-auth.md"), "ADR reached as UP_PROVENANCE");
+  assert.equal(upBlast.nodes.get("docs/adr/0001-auth.md")!.phase, "UP_PROVENANCE");
+
+  // Collider: unrelated logger that also uses auth service must NOT be reached
+  assert.equal(upBlast.nodes.has("src/unrelated/logger.ts"), false, "Causal collider blocks reverse uses from DEP_PREREQ");
+
+  // Active edges must only illuminate the causal path
+  assert.ok(upBlast.activeEdges.has("test/auth/service.test.ts->src/auth/service.ts"));
+  assert.ok(upBlast.activeEdges.has("src/auth/service.ts->features/auth/login.feature"));
+  assert.ok(upBlast.activeEdges.has("features/auth/login.feature->docs/adr/0001-auth.md"));
+  assert.equal(upBlast.activeEdges.has("src/auth/service.ts->src/unrelated/logger.ts"), false);
+
+  // Downstream: selecting Spec propagates downstream through Code to Test
+  const downBlast = computeBlastAttenuation(["features/auth/login.feature"], nodes, edges);
+  assert.ok(downBlast.nodes.has("features/auth/login.feature"), "Spec is seed");
+  assert.ok(downBlast.nodes.has("src/auth/service.ts"), "Code reached as DOWN_REALIZE");
+  assert.equal(downBlast.nodes.get("src/auth/service.ts")!.phase, "DOWN_REALIZE");
+  assert.ok(downBlast.nodes.has("test/auth/service.test.ts"), "Test reached as LEAF_SINK");
+  assert.equal(downBlast.nodes.get("test/auth/service.test.ts")!.phase, "LEAF_SINK");
+
+  // Ribbon active blast edge filtering
+  const graph = computeSankeyColumns(nodes, edges);
+  applyBlastScoresToRibbons(graph.ribbons, graph.columns, upBlast);
+  for (const r of graph.ribbons) {
+    const isAuthPath =
+      (r.sourceBarId.includes("auth") && r.targetBarId.includes("auth")) ||
+      (r.sourceBarId.includes("adr") && r.targetBarId.includes("auth"));
+    if (isAuthPath) {
+      assert.equal(r.inLineage, true, `Ribbon ${r.sourceBarId} -> ${r.targetBarId} must be active`);
+    } else {
+      assert.equal(r.inLineage, false, `Unrelated ribbon ${r.sourceBarId} -> ${r.targetBarId} must stay dimmed`);
+    }
+  }
+});
+
+test("Directory hierarchy remains intact per column with collapsible parent folder headers and contiguous children", async () => {
+  const nodes = [
+    { id: "src/parser/ast.ts", sources: ["src/parser/ast.ts"] },
+    { id: "src/parser/lexer.ts", sources: ["src/parser/lexer.ts"] },
+    { id: "src/parser/tokens.ts", sources: ["src/parser/tokens.ts"] },
+    { id: "src/net/client.ts", sources: ["src/net/client.ts"] },
+    { id: "src/net/server.ts", sources: ["src/net/server.ts"] },
+  ];
+  const edges: any[] = [];
+
+  // Expanded directory: src and src/parser
+  const expandedDirs = new Set(["src", "src/parser"]);
+  const graph = computeSankeyColumns(nodes, edges, new Set(), 1, expandedDirs);
+  const codeBars = graph.columns.code.bars;
+
+  // 1. Collapsible parent header bar for src/parser exists
+  const parserHeader = codeBars.find((b) => b.id === "dir:code:src/parser");
+  assert.ok(parserHeader, "Parent folder header bar for src/parser must exist");
+  assert.equal(parserHeader.isGroup, true);
+  assert.equal(parserHeader.isExpandedHeader, true);
+  assert.equal(parserHeader.dirPath, "src/parser");
+  assert.equal(parserHeader.parentDir, "src");
+
+  // 2. Immediate children of src/parser appear contiguously right after header
+  const headerIdx = codeBars.indexOf(parserHeader);
+  const astIdx = codeBars.findIndex((b) => b.id === "src/parser/ast.ts");
+  const lexerIdx = codeBars.findIndex((b) => b.id === "src/parser/lexer.ts");
+  const tokensIdx = codeBars.findIndex((b) => b.id === "src/parser/tokens.ts");
+
+  assert.ok(astIdx > headerIdx && lexerIdx > headerIdx && tokensIdx > headerIdx);
+  const childIndices = [astIdx, lexerIdx, tokensIdx].sort((a, b) => a - b);
+  assert.equal(childIndices[0], headerIdx + 1, "First child must follow header immediately");
+  assert.equal(childIndices[1], headerIdx + 2, "Second child must be contiguous");
+  assert.equal(childIndices[2], headerIdx + 3, "Third child must be contiguous");
+
+  // 3. Child bars carry depth higher than header depth
+  assert.ok(codeBars[astIdx].depth! > parserHeader.depth!, "Child bars must carry indented depth");
+
+  // 4. Collapsed sibling folder src/net remains grouped as folder
+  const netBar = codeBars.find((b) => b.id === "dir:code:src/net");
+  assert.ok(netBar, "Collapsed sibling folder src/net must be present");
+  assert.equal(netBar.isGroup, true);
+  assert.equal(netBar.isExpandedHeader, false);
+
+  // 5. Flat mode also populates parentDir and depth on all bars
+  const flatGraph = computeSankeyColumns(nodes, edges);
+  for (const bar of flatGraph.columns.code.bars) {
+    assert.ok(bar.parentDir !== undefined, `Flat bar ${bar.id} must have parentDir`);
+    assert.ok(bar.depth !== undefined, `Flat bar ${bar.id} must have depth`);
+  }
+});
+
+test("Columns support sorting by barycenter flow, directory tree hierarchy, alphabetical name, and coupling weight", async () => {
+  const nodes = [
+    { id: "src/zebra/z1.ts", sources: ["src/zebra/z1.ts"] },
+    { id: "src/zebra/z2.ts", sources: ["src/zebra/z2.ts"] },
+    { id: "src/alpha/a1.ts", sources: ["src/alpha/a1.ts"] },
+    { id: "src/alpha/a2.ts", sources: ["src/alpha/a2.ts"] },
+    { id: "src/beta/b1.ts", sources: ["src/beta/b1.ts"] },
+  ];
+  // Assign heavy edges to zebra/z2 and alpha/a1
+  const edges = [
+    { source: "src/alpha/a1.ts", target: "docs/d1.md", relation: "documents" },
+    { source: "src/alpha/a1.ts", target: "docs/d2.md", relation: "documents" },
+    { source: "src/alpha/a1.ts", target: "docs/d3.md", relation: "documents" },
+    { source: "src/alpha/a1.ts", target: "docs/d4.md", relation: "documents" },
+    { source: "src/alpha/a1.ts", target: "docs/d5.md", relation: "documents" },
+    { source: "src/alpha/a2.ts", target: "docs/d6.md", relation: "documents" },
+    { source: "src/zebra/z2.ts", target: "docs/d7.md", relation: "documents" },
+    { source: "src/zebra/z2.ts", target: "docs/d8.md", relation: "documents" },
+    { source: "src/zebra/z2.ts", target: "docs/d9.md", relation: "documents" },
+  ];
+
+  const expandedDirs = new Set(["src", "src/alpha", "src/zebra"]);
+
+  // Test 1: Name sort order (A-Z)
+  const nameData = buildSankeyData(nodes, edges, { expandedDirs, sortOrder: "name" });
+  const nameLabels = nameData.columns.code.bars.map((b) => b.label);
+  const alphaHeaderIdx = nameLabels.findIndex((l) => l.includes("alpha"));
+  const betaIdx = nameLabels.findIndex((l) => l.includes("beta"));
+  const zebraHeaderIdx = nameLabels.findIndex((l) => l.includes("zebra"));
+  assert.ok(alphaHeaderIdx < betaIdx && betaIdx < zebraHeaderIdx, "Directory groups must sort alphabetically A-Z");
+
+  // Inside alpha: a1 before a2
+  const a1Idx = nameLabels.findIndex((l) => l === "a1.ts");
+  const a2Idx = nameLabels.findIndex((l) => l === "a2.ts");
+  assert.ok(a1Idx < a2Idx, "Sibling files in alpha must sort A-Z");
+
+  // Test 2: Weight sort order (descending)
+  const weightData = buildSankeyData(nodes, edges, { expandedDirs, sortOrder: "weight" });
+  const weightBars = weightData.columns.code.bars;
+  const wAlpha = weightBars.findIndex((b) => b.label.includes("alpha"));
+  const wZebra = weightBars.findIndex((b) => b.label.includes("zebra"));
+  assert.ok(wAlpha < wZebra, "Alpha (higher weight) must precede Zebra");
+
+  // Test 3: Hierarchy sort order (path-based)
+  const hierData = buildSankeyData(nodes, edges, { expandedDirs, sortOrder: "hierarchy" });
+  const hierBars = hierData.columns.code.bars;
+  const hAlpha = hierBars.findIndex((b) => b.label.includes("alpha"));
+  const hZebra = hierBars.findIndex((b) => b.label.includes("zebra"));
+  assert.ok(hAlpha < hZebra, "Hierarchy order must preserve path lexicographical order");
+
+  // Invariant across all sort orders: sibling bars remain contiguous
+  for (const sOrder of ["name", "weight", "hierarchy", "barycenter"] as SankeySortOrder[]) {
+    const data = buildSankeyData(nodes, edges, { expandedDirs, sortOrder: sOrder });
+    const barIds = data.columns.code.bars.map((b) => b.id);
+    const z1 = barIds.indexOf("src/zebra/z1.ts");
+    const z2 = barIds.indexOf("src/zebra/z2.ts");
+    assert.equal(Math.abs(z1 - z2), 1, `Children of zebra must remain contiguous under sort order "${sOrder}"`);
+    const a1 = barIds.indexOf("src/alpha/a1.ts");
+    const a2 = barIds.indexOf("src/alpha/a2.ts");
+    assert.equal(Math.abs(a1 - a2), 1, `Children of alpha must remain contiguous under sort order "${sOrder}"`);
+  }
+});
+
+test("Bars and columns remain in fixed layout slots without freeform node dragging and click selection is immediate", async () => {
+  const container = createMockContainer();
+  const sankey = new SankeyView(container);
+  const nodes = [
+    { id: "src/core/main.ts", sources: ["src/core/main.ts"] },
+    { id: "src/core/util.ts", sources: ["src/core/util.ts"] },
+  ];
+  sankey.setData(nodes, []);
+
+  // Single click immediately selects bar without 320ms timer interference
+  sankey.handleBarClick("src/core/main.ts");
+  assert.equal(sankey.selectedId, "src/core/main.ts");
+  assert.deepEqual(sankey.selectedBarIds, ["src/core/main.ts"]);
+
+  // Clicking again immediately deselects
+  sankey.handleBarClick("src/core/main.ts");
+  assert.equal(sankey.selectedId, null);
+  assert.equal(sankey.selectedBarIds, null);
+
+  // Sorting order change updates sortOrder property
+  sankey.sortOrder = "name";
+  sankey.rebuild();
+  assert.equal(sankey.sortOrder, "name");
+
+  const layout = sankey.getBarLayout().get("src/core/main.ts")!;
+  assert.ok(layout, "Bar layout must be computed");
+  assert.equal(typeof layout.x, "number", "Bar horizontal position must be computed");
+  assert.equal(typeof layout.y, "number", "Bar vertical position must be computed");
 });

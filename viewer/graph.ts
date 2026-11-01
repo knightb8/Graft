@@ -38,6 +38,19 @@ import {
   consolidateOrphanClusters, synthesizeDirectoryTree, applyCosmosConcentricLayout,
   type NodeSizeMetric, computeNodeSizeRadius,
 } from "./data.js";
+import {
+  MinimapOverlay,
+  computeTwoDegreeFocus,
+  type TwoDegreeFocusResult,
+} from "./minimap.js";
+import {
+  computeClusterCombos,
+  type ClusterCombosResult,
+} from "./combos.js";
+import {
+  LayoutTransitionManager,
+  cubicEaseOut,
+} from "./transitions.js";
 
 export type GraphLayoutEngine = "stress" | "cosmos" | "d3" | "legacy";
 
@@ -242,6 +255,13 @@ export class GraphView {
   public contractionMode: EdgeContractionMode = "coupled";
   public weightTuning: CosmosWeightTuning = { ...COSMOS_PRESETS.coupled };
   public supportNodes: Set<string> = new Set<string>();
+  public minimap: MinimapOverlay | null = null;
+  public showMinimap = true;
+  public twoDegreeFocus: TwoDegreeFocusResult | null = null;
+  public comboMode = false;
+  public expandedClusters = new Set<string>();
+  public combosResult: ClusterCombosResult | null = null;
+  public transitionManager = new LayoutTransitionManager();
   private rebounceAnimId: number | null = null;
   private dragSimulator: {
     activeNodes: SimNode[];
@@ -741,11 +761,31 @@ export class GraphView {
 
       this.sigma.getCamera().on("updated", () => {
         this.drawArchipelago();
+        this.updateMinimap();
       });
 
       if (typeof window !== "undefined") {
         window.addEventListener("resize", () => {
           this.drawArchipelago();
+          this.updateMinimap();
+        });
+      }
+
+      if (this.container && typeof document !== "undefined" && typeof this.container.appendChild === "function") {
+        this.minimap = new MinimapOverlay({
+          container: this.container,
+          width: 156,
+          height: 104,
+          padding: 8,
+          onPanTo: (worldX, worldY) => {
+            if (!this.sigma) return;
+            try {
+              const framed = this.sigma.graphToFramedGraph({ x: worldX, y: worldY });
+              this.sigma.getCamera().setState({ x: framed.x, y: framed.y });
+            } catch {
+              this.sigma.getCamera().setState({ x: worldX, y: worldY });
+            }
+          },
         });
       }
 
@@ -1265,11 +1305,17 @@ export class GraphView {
         labelVisibility = "visible";
       } else if (isSelectedNeighbor) {
         size = data.size + 1.5;
-        opacity = 0.95;
+        opacity = 1.0;
         labelSize = 11.5;
         labelVisibility = "visible";
+      } else if (this.twoDegreeFocus && this.twoDegreeFocus.hop2.has(nodeId)) {
+        size = data.size + 0.5;
+        opacity = Math.min(opacity, 0.55);
+        labelColor = this.themeColors.muted;
+        labelSize = 10.5;
+        labelVisibility = "auto";
       } else {
-        opacity = Math.min(opacity, 0.12);
+        opacity = Math.min(opacity, 0.10);
         labelColor = this.themeColors.muted;
         labelSize = 10;
         labelVisibility = "hidden";
@@ -1459,7 +1505,15 @@ export class GraphView {
       size = Math.max(2.4, size + 1.2);
       curvature = defaultCurvature;
     } else if (role === "far") {
-      opacity = isHoverActive ? 0.06 : 0.03;
+      const edgeFocus = (!isHoverActive && this.twoDegreeFocus)
+        ? this.twoDegreeFocus.getEdgeFocus(source, target)
+        : null;
+      if (edgeFocus && edgeFocus.tier === 2) {
+        opacity = 0.45;
+        size = Math.max(1.1, size * 0.85);
+      } else {
+        opacity = isHoverActive ? 0.06 : 0.03;
+      }
       curvature = defaultCurvature;
     } else if (q && !matchA && !matchB) {
       opacity = 0.06;
@@ -1595,10 +1649,22 @@ export class GraphView {
           this.neighbors.add(source === this.selected ? target : source);
         }
       });
+      const focusEdges: Array<{ source: string; target: string; type?: string }> = [];
+      this.graph.forEachEdge((edgeKey, attrs, src, tgt) => {
+        const sNode = this.nodeMap.get(src);
+        const tNode = this.nodeMap.get(tgt);
+        if (!sNode || !tNode || !this.isNodeShown(sNode) || !this.isNodeShown(tNode)) return;
+        if (!attrs.transitive && this.hiddenRels[chipKey(attrs.relation)]) return;
+        focusEdges.push({ source: src, target: tgt, type: attrs.relation });
+      });
+      this.twoDegreeFocus = computeTwoDegreeFocus(this.selected, focusEdges);
+    } else {
+      this.twoDegreeFocus = null;
     }
 
     this.sigma?.refresh();
     this.drawArchipelago();
+    this.updateMinimap();
   }
 
   select(id: string | null): void {
@@ -1841,6 +1907,8 @@ export class GraphView {
       return;
     }
 
+    const fromMap = new Map<string, { x: number; y: number }>();
+    const toMap = new Map<string, { x: number; y: number }>();
     const startX = new Float32Array(N);
     const startY = new Float32Array(N);
     const targetX = new Float32Array(N);
@@ -1853,6 +1921,15 @@ export class GraphView {
       startY[i] = visibleNodes[i].y;
       targetX[i] = simNodes[i].x;
       targetY[i] = simNodes[i].y;
+      fromMap.set(visibleNodes[i].id, { x: visibleNodes[i].x, y: visibleNodes[i].y });
+      toMap.set(visibleNodes[i].id, { x: simNodes[i].x, y: simNodes[i].y });
+    }
+
+    const now0 = typeof performance !== "undefined" ? performance.now() : 0;
+    if (this.transitionManager.isActive()) {
+      this.transitionManager.retarget(toMap, now0, 280);
+    } else {
+      this.transitionManager.start(fromMap, toMap, now0, 280);
     }
 
     const totalFrames = 18;
@@ -1860,7 +1937,8 @@ export class GraphView {
 
     const step = () => {
       currentFrame++;
-      const t = Math.min(1.0, currentFrame / totalFrames);
+      const rawT = Math.min(1.0, currentFrame / totalFrames);
+      const t = cubicEaseOut(rawT);
       lerpNodePositions(startX, startY, targetX, targetY, outX, outY, N, t);
 
       for (let i = 0; i < N; i++) {
@@ -1877,11 +1955,13 @@ export class GraphView {
 
       this.sigma?.refresh();
       this.drawArchipelago();
+      this.updateMinimap();
 
       if (currentFrame < totalFrames) {
         this.rebounceAnimId = requestAnimationFrame(step);
       } else {
         this.rebounceAnimId = null;
+        this.transitionManager.cancel();
         this.restyle();
         this.sigma?.refresh();
         this.resetView();
@@ -1889,6 +1969,90 @@ export class GraphView {
     };
 
     this.rebounceAnimId = requestAnimationFrame(step);
+  }
+
+  updateMinimap(): void {
+    if (!this.minimap || !this.showMinimap || !this.container) return;
+    const visibleNodes = this.nodes.filter((n) => this.isNodeShown(n));
+    const points = visibleNodes.map((n) => ({
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      color: this.graph.hasNode(n.id) ? this.graph.getNodeAttribute(n.id, "color") : undefined,
+      radius: Math.max(1.5, Math.min(4, (n.r || 6) * 0.3)),
+    }));
+    const W = this.container.clientWidth || 800;
+    const H = this.container.clientHeight || 600;
+    let cx = 0;
+    let cy = 0;
+    let zoom = 1;
+    if (this.sigma) {
+      try {
+        const centerGraph = this.sigma.viewportToGraph({ x: W / 2, y: H / 2 });
+        const rightGraph = this.sigma.viewportToGraph({ x: W, y: H / 2 });
+        cx = centerGraph.x;
+        cy = centerGraph.y;
+        const halfSpanWorld = Math.max(1, Math.abs(rightGraph.x - centerGraph.x));
+        zoom = (W / 2) / halfSpanWorld;
+      } catch {
+        const cam = this.sigma.getCamera();
+        zoom = 1 / Math.max(0.05, cam.ratio || 1);
+      }
+    }
+    this.minimap.update(points, {
+      cx,
+      cy,
+      zoom,
+      viewportWidth: W,
+      viewportHeight: H,
+    });
+  }
+
+  setComboMode(enabled: boolean): void {
+    this.comboMode = enabled;
+    if (!enabled) {
+      this.expandedClusters.clear();
+      this.combosResult = null;
+    } else {
+      this.recomputeCombos();
+    }
+    this.restyle();
+  }
+
+  toggleClusterCombo(clusterKey: string): void {
+    if (this.expandedClusters.has(clusterKey)) {
+      this.expandedClusters.delete(clusterKey);
+    } else {
+      this.expandedClusters.add(clusterKey);
+    }
+    if (this.comboMode) {
+      this.recomputeCombos();
+      this.restyle();
+    }
+  }
+
+  private recomputeCombos(): void {
+    const visibleNodes = this.nodes.filter((n) => this.isNodeShown(n));
+    const comboInputs = visibleNodes.map((n) => ({
+      id: n.id,
+      label: n.name,
+      group: n.clusterKey || "root",
+      file: n.sources?.[0],
+      x: n.x,
+      y: n.y,
+      degree: n.deg,
+    }));
+    const edgeInputs: Array<{ source: string; target: string; type: string; weight?: number }> = [];
+    this.graph.forEachEdge((edgeKey, attrs, src, tgt) => {
+      if (!attrs.transitive) {
+        edgeInputs.push({ source: src, target: tgt, type: attrs.relation, weight: attrs.weight });
+      }
+    });
+    this.combosResult = computeClusterCombos(comboInputs, edgeInputs, {
+      enabled: this.comboMode,
+      expandedClusters: this.expandedClusters,
+      clusterKeyFn: (node) => node.group,
+    });
   }
 
   setAggregateToParent(aggregate: boolean): void {
