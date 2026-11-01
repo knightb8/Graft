@@ -111,18 +111,18 @@
   --edge:#5C3A20; --canvas:#100905;
 }
 
-/* 8. Christmas (Holiday Pine, Crimson & Gold) */
+/* 8. Christmas (Weihnachts-RAL: RAL 180 50 40, RAL 6005, RAL 3001, RAL 3003, RAL 1036) */
 :root[data-theme="christmas"]{
-  --bg:#07160E; --panel:#0E2519; --panel2:#153424; --ink:#F8FAFC; --muted:#86EFAC;
-  --border:#1E4E35; --border2:#173D29; --accent:#E11D48; --accent-ink:#4C0519;
-  --chip:#153424;
-  --sys:#38BDF8; --con:#E11D48; --fil:#EAB308; --api:#F43F5E;
-  --k-file:#EAB308; --k-class:#38BDF8; --k-fn:#22C55E; --k-method:#10B981; --k-iface:#E11D48; --k-type:#F43F5E; --k-enum:#FACC15;
-  --scope-code:#38BDF8; --scope-docs:#E11D48; --scope-specs:#22C55E; --scope-transitive:#EAB308;
-  --stage-adrs:#A855F7; --stage-features:#22C55E; --stage-code:#38BDF8; --stage-tests:#FACC15; --stage-docs:#E11D48;
-  --rel-structure:#38BDF8; --rel-dependency:#FACC15; --rel-contract:#22C55E; --rel-association:#E11D48;
-  --amber:#FACC15; --red:#E11D48;
-  --edge:#1E4E35; --canvas:#040F0A;
+  --bg:#07160e; --panel:#0a2116; --panel2:#114232; --ink:#fefce8; --muted:#008571;
+  --border:#114232; --border2:#861a22; --accent:#a52019; --accent-ink:#ffffff;
+  --chip:#114232;
+  --sys:#008571; --con:#a52019; --fil:#80643f; --api:#861a22;
+  --k-file:#80643f; --k-class:#008571; --k-fn:#008571; --k-method:#114232; --k-iface:#a52019; --k-type:#861a22; --k-enum:#80643f;
+  --scope-code:#008571; --scope-docs:#a52019; --scope-specs:#008571; --scope-transitive:#80643f;
+  --stage-adrs:#861a22; --stage-features:#008571; --stage-code:#80643f; --stage-tests:#a52019; --stage-docs:#861a22;
+  --rel-structure:#008571; --rel-dependency:#80643f; --rel-contract:#008571; --rel-association:#a52019;
+  --amber:#80643f; --red:#a52019;
+  --edge:#11423288; --canvas:#030d08;
 }
 
 /* 9. Light (Crisp High-Contrast Clean Slate) */

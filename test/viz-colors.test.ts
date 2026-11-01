@@ -126,3 +126,27 @@ test("cyberpunk 2077 theme integrates authentic UI and Title Card color palettes
     );
   }
 });
+
+test("christmas theme integrates authentic Weihnachts-RAL color palette", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+
+  const match = css.match(/:root\[data-theme="christmas"\]\{([^}]+)\}/);
+  assert.ok(match, "Christmas theme definition found in style.css");
+  const themeCss = match[1].toLowerCase();
+
+  const ralColors = [
+    "#008571", // RAL 180 50 40 (Weihnachtsgrün offiziell)
+    "#114232", // RAL 6005 (Tannengrün / Moosgrün)
+    "#a52019", // RAL 3001 (Weihnachtsrot / Signalrot)
+    "#861a22", // RAL 3003 (Rubinrot / Dunkelrot)
+    "#80643f", // RAL 1036 (Gold / Perlgold)
+  ];
+  for (const color of ralColors) {
+    assert.ok(
+      themeCss.includes(color),
+      `Christmas theme must include authentic RAL color ${color}`
+    );
+  }
+});
