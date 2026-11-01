@@ -85,3 +85,44 @@ test("viewer style defines all 13 themes with required palette tokens", async ()
     assert.ok(css.includes(`${token}:`), `Token ${token} must be defined in style.css`);
   }
 });
+
+test("cyberpunk 2077 theme integrates authentic UI and Title Card color palettes", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+
+  // Extract the cyberpunk theme block
+  const match = css.match(/:root\[data-theme="cyberpunk"\]\{([^}]+)\}/);
+  assert.ok(match, "Cyberpunk theme definition found in style.css");
+  const themeCss = match[1].toLowerCase();
+
+  // 1. UI Color Palette
+  const uiColors = [
+    "#000000", // Black
+    "#c5003c", // Crimson
+    "#880425", // Dark Red
+    "#f3e600", // Yellow
+    "#55ead4", // Cyan
+  ];
+  for (const color of uiColors) {
+    assert.ok(
+      themeCss.includes(color),
+      `Cyberpunk theme must include UI palette color ${color}`
+    );
+  }
+
+  // 2. Title Card Color Palette
+  const titleCardColors = [
+    "#00060e", // Dark Blue
+    "#9a9f17", // Olive Green
+    "#fee801", // Bright Yellow
+    "#54c1e6", // Light Blue
+    "#39c4b6", // Teal
+  ];
+  for (const color of titleCardColors) {
+    assert.ok(
+      themeCss.includes(color),
+      `Cyberpunk theme must include Title Card palette color ${color}`
+    );
+  }
+});

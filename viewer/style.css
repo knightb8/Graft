@@ -55,18 +55,18 @@
   --edge:#7E1763; --canvas:#070212;
 }
 
-/* 4. Cyberpunk 2077 (Night City Electric Yellow & Neon Cyan) */
+/* 4. Cyberpunk 2077 (Night City Electric Yellow, Cyan, Crimson & Title Palette) */
 :root[data-theme="cyberpunk"]{
-  --bg:#030508; --panel:#0A0E14; --panel2:#121822; --ink:#FCEE0A; --muted:#7E95A8;
-  --border:#FCEE0A55; --border2:#00F0FF33; --accent:#FCEE0A; --accent-ink:#000000;
-  --chip:#121822;
-  --sys:#00F0FF; --con:#FF003C; --fil:#FCEE0A; --api:#D600FF;
-  --k-file:#FCEE0A; --k-class:#00F0FF; --k-fn:#00E5FF; --k-method:#00FF66; --k-iface:#FF003C; --k-type:#D600FF; --k-enum:#FCEE0A;
-  --scope-code:#00F0FF; --scope-docs:#FF003C; --scope-specs:#FCEE0A; --scope-transitive:#FF7700;
-  --stage-adrs:#D600FF; --stage-features:#00FF66; --stage-code:#00F0FF; --stage-tests:#FCEE0A; --stage-docs:#FF003C;
-  --rel-structure:#00F0FF; --rel-dependency:#FCEE0A; --rel-contract:#00FF66; --rel-association:#D600FF;
-  --amber:#FCEE0A; --red:#FF003C;
-  --edge:#00F0FF44; --canvas:#010204;
+  --bg:#00060e; --panel:#050c17; --panel2:#0b1422; --ink:#f3e600; --muted:#54c1e6;
+  --border:#880425; --border2:#c5003c66; --accent:#fee801; --accent-ink:#000000;
+  --chip:#0c1826;
+  --sys:#55ead4; --con:#c5003c; --fil:#f3e600; --api:#54c1e6;
+  --k-file:#f3e600; --k-class:#55ead4; --k-fn:#54c1e6; --k-method:#39c4b6; --k-iface:#c5003c; --k-type:#9a9f17; --k-enum:#fee801;
+  --scope-code:#55ead4; --scope-docs:#c5003c; --scope-specs:#f3e600; --scope-transitive:#fee801;
+  --stage-adrs:#54c1e6; --stage-features:#9a9f17; --stage-code:#55ead4; --stage-tests:#f3e600; --stage-docs:#c5003c;
+  --rel-structure:#55ead4; --rel-dependency:#f3e600; --rel-contract:#39c4b6; --rel-association:#c5003c;
+  --amber:#fee801; --red:#c5003c;
+  --edge:#39c4b644; --canvas:#000000;
 }
 
 /* 5. Spring (Sakura Blossoms & Young Shoots) */
