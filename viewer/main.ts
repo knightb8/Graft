@@ -814,6 +814,9 @@ $("zreset").addEventListener("click", () => view.resetView());
 
 /* ---------- theme ---------- */
 const THEME_KEY = "graft-viz-theme";
+const LAST_DARK_KEY = "graft-viz-theme-last-dark";
+const LAST_LIGHT_KEY = "graft-viz-theme-last-light";
+
 const ALL_THEMES = [
   "dark",
   "tokyonight",
@@ -831,6 +834,25 @@ const ALL_THEMES = [
 ] as const;
 type ThemeName = typeof ALL_THEMES[number];
 
+const LIGHT_THEMES: readonly string[] = ["light", "nord-light", "solarized-light", "github-light", "sepia"];
+const DARK_THEMES: readonly string[] = ["dark", "tokyonight", "synthwave", "cyberpunk", "spring", "summer", "autumn", "christmas"];
+
+const SUN_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
+const MOON_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>`;
+
+function isThemeLight(name: string): boolean {
+  return LIGHT_THEMES.includes(name);
+}
+
+function updateThemeButton(themeName: string): void {
+  const btn = $("themeBtn");
+  if (!btn) return;
+  const isLight = isThemeLight(themeName);
+  btn.innerHTML = isLight ? SUN_ICON : MOON_ICON;
+  btn.title = isLight ? "Switch to dark mode (current: light)" : "Switch to light mode (current: dark)";
+  btn.setAttribute("aria-label", isLight ? "Switch to dark mode" : "Switch to light mode");
+}
+
 function applyTheme(name: string): void {
   const validTheme: ThemeName = (ALL_THEMES as readonly string[]).includes(name)
     ? (name as ThemeName)
@@ -839,11 +861,17 @@ function applyTheme(name: string): void {
   root.setAttribute("data-theme", validTheme);
   try {
     localStorage.setItem(THEME_KEY, validTheme);
+    if (isThemeLight(validTheme)) {
+      localStorage.setItem(LAST_LIGHT_KEY, validTheme);
+    } else {
+      localStorage.setItem(LAST_DARK_KEY, validTheme);
+    }
   } catch {}
   const themeSelect = $("themeSelect") as HTMLSelectElement | null;
   if (themeSelect && themeSelect.value !== validTheme) {
     themeSelect.value = validTheme;
   }
+  updateThemeButton(validTheme);
   view.restyle();
   renderChips();
   renderLegend();
@@ -869,9 +897,13 @@ $("themeSelect")?.addEventListener("change", (ev) => {
 
 $("themeBtn")?.addEventListener("click", () => {
   const current = document.documentElement.getAttribute("data-theme") || "dark";
-  const idx = ALL_THEMES.indexOf(current as ThemeName);
-  const nextIdx = (idx + 1) % ALL_THEMES.length;
-  applyTheme(ALL_THEMES[nextIdx]);
+  if (isThemeLight(current)) {
+    const targetDark = localStorage.getItem(LAST_DARK_KEY) || "dark";
+    applyTheme((DARK_THEMES as readonly string[]).includes(targetDark) ? targetDark : "dark");
+  } else {
+    const targetLight = localStorage.getItem(LAST_LIGHT_KEY) || "light";
+    applyTheme((LIGHT_THEMES as readonly string[]).includes(targetLight) ? targetLight : "light");
+  }
 });
 
 /* ---------- files picker controls ---------- */
