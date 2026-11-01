@@ -1,6 +1,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { colorToken } from "../viewer/data.js";
+
+function loadViewerCss(): string {
+  const mainCss = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+  return mainCss.replace(/@import\s+["']\.\/styles\/([^"']+)["'];/g, (_, file) => {
+    return fs.readFileSync(path.resolve("viewer/styles", file), "utf-8");
+  });
+}
+
+test("style.css is split into modular stylesheets and imported cleanly", () => {
+  const mainCss = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+  const expectedModules = [
+    "./styles/themes.css",
+    "./styles/base.css",
+    "./styles/detail.css",
+    "./styles/picker.css",
+    "./styles/views.css",
+  ];
+  for (const mod of expectedModules) {
+    assert.ok(mainCss.includes(`@import "${mod}";`), `style.css must import ${mod}`);
+    const filePath = path.resolve("viewer", mod);
+    assert.ok(fs.existsSync(filePath), `Modular stylesheet ${mod} must exist on disk`);
+  }
+});
 
 test("colorToken returns scope-specific tokens for docs, specs, and code", () => {
   // specs scope always returns --scope-specs
@@ -26,9 +51,7 @@ test("colorToken returns scope-specific tokens for docs, specs, and code", () =>
 });
 
 test("viewer style defines all 13 themes with required palette tokens", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+  const css = loadViewerCss();
   const html = fs.readFileSync(path.resolve("viewer/index.html"), "utf-8");
 
   const expectedThemes = [
@@ -36,7 +59,7 @@ test("viewer style defines all 13 themes with required palette tokens", async ()
     "dark",
     "tokyonight",
     "synthwave",
-    "cyberpunk",
+    "neon-noir",
     "spring",
     "summer",
     "autumn",
@@ -45,7 +68,7 @@ test("viewer style defines all 13 themes with required palette tokens", async ()
     "light",
     "nord-light",
     "solarized-light",
-    "github-light",
+    "repo-light",
     "sepia",
   ];
 
@@ -86,14 +109,12 @@ test("viewer style defines all 13 themes with required palette tokens", async ()
   }
 });
 
-test("cyberpunk 2077 theme integrates authentic UI and Title Card color palettes", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+test("neon-noir theme integrates authentic electric UI and Title Card color palettes", async () => {
+  const css = loadViewerCss();
 
-  // Extract the cyberpunk theme block
-  const match = css.match(/:root\[data-theme="cyberpunk"\]\{([^}]+)\}/);
-  assert.ok(match, "Cyberpunk theme definition found in style.css");
+  // Extract the neon-noir theme block
+  const match = css.match(/:root\[data-theme="neon-noir"\]\{([^}]+)\}/);
+  assert.ok(match, "Neon Noir theme definition found in style.css");
   const themeCss = match[1].toLowerCase();
 
   // 1. UI Color Palette
@@ -107,7 +128,7 @@ test("cyberpunk 2077 theme integrates authentic UI and Title Card color palettes
   for (const color of uiColors) {
     assert.ok(
       themeCss.includes(color),
-      `Cyberpunk theme must include UI palette color ${color}`
+      `Neon Noir theme must include UI palette color ${color}`
     );
   }
 
@@ -122,15 +143,13 @@ test("cyberpunk 2077 theme integrates authentic UI and Title Card color palettes
   for (const color of titleCardColors) {
     assert.ok(
       themeCss.includes(color),
-      `Cyberpunk theme must include Title Card palette color ${color}`
+      `Neon Noir theme must include Title Card palette color ${color}`
     );
   }
 });
 
 test("christmas theme integrates authentic Weihnachts-RAL color palette", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+  const css = loadViewerCss();
 
   const match = css.match(/:root\[data-theme="christmas"\]\{([^}]+)\}/);
   assert.ok(match, "Christmas theme definition found in style.css");
@@ -152,16 +171,14 @@ test("christmas theme integrates authentic Weihnachts-RAL color palette", async 
 });
 
 test("all 13 themes define dedicated space bubble palettes (--bubble-0 to --bubble-9)", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+  const css = loadViewerCss();
   const { THEME_GALAXY_PALETTES } = await import("../viewer/data.js");
 
   const expectedThemes = [
     "dark",
     "tokyonight",
     "synthwave",
-    "cyberpunk",
+    "neon-noir",
     "spring",
     "summer",
     "autumn",
@@ -169,7 +186,7 @@ test("all 13 themes define dedicated space bubble palettes (--bubble-0 to --bubb
     "light",
     "nord-light",
     "solarized-light",
-    "github-light",
+    "repo-light",
     "sepia",
   ];
 
@@ -199,7 +216,7 @@ test("theme signature watermarks render valid SVGs for all 13 themes", async () 
     "dark",
     "tokyonight",
     "synthwave",
-    "cyberpunk",
+    "neon-noir",
     "spring",
     "summer",
     "autumn",
@@ -207,7 +224,7 @@ test("theme signature watermarks render valid SVGs for all 13 themes", async () 
     "light",
     "nord-light",
     "solarized-light",
-    "github-light",
+    "repo-light",
     "sepia",
   ];
 

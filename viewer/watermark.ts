@@ -29,9 +29,9 @@ export function renderThemeWatermark(theme: string): string {
         </svg>
       `;
 
-    case "cyberpunk":
+    case "neon-noir":
       return `
-        <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Cyberpunk 2077 Watermark">
+        <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Neon Noir Watermark">
           <!-- Glitch frame brackets -->
           <path d="M12 28 V12 H28 M92 12 H108 V28 M108 92 V108 H92 M28 108 H12 V92" stroke="var(--border2, #c5003c)" stroke-width="2"/>
           <!-- Circuit traces -->
@@ -47,8 +47,8 @@ export function renderThemeWatermark(theme: string): string {
           <line x1="52" y1="76" x2="52" y2="84" stroke="var(--border2, #c5003c)"/>
           <line x1="60" y1="76" x2="60" y2="86" stroke="var(--border2, #c5003c)"/>
           <line x1="68" y1="76" x2="68" y2="84" stroke="var(--border2, #c5003c)"/>
-          <!-- 2077 badge -->
-          <text x="60" y="106" text-anchor="middle" font-family="monospace" font-size="10" font-weight="900" fill="var(--ink, #f3e600)" letter-spacing="2">2077</text>
+          <!-- Neon badge -->
+          <text x="60" y="106" text-anchor="middle" font-family="monospace" font-size="9" font-weight="700" fill="var(--ink, #f3e600)" letter-spacing="3">NEON</text>
         </svg>
       `;
 
@@ -75,7 +75,7 @@ export function renderThemeWatermark(theme: string): string {
 
     case "synthwave":
       return `
-        <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Synthwave Tron Watermark">
+        <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Synthwave Outrun Watermark">
           <!-- Striped Outrun Sun -->
           <circle cx="60" cy="50" r="26" fill="var(--fil, #ffe600)" opacity="0.3"/>
           <circle cx="60" cy="50" r="26" stroke="var(--con, #ff007f)" stroke-width="2"/>
@@ -240,9 +240,9 @@ export function renderThemeWatermark(theme: string): string {
         </svg>
       `;
 
-    case "github-light":
+    case "repo-light":
       return `
-        <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="GitHub Primer Watermark">
+        <svg viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Repo Light Git Graph Watermark">
           <!-- Git Commit & Branching Graph Tree -->
           <!-- Trunk Line -->
           <line x1="36" y1="18" x2="36" y2="102" stroke="var(--accent, #0969da)" stroke-width="2.5"/>

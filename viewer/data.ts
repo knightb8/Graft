@@ -201,12 +201,15 @@ export function colorToken(
 export function isLightTheme(): boolean {
   if (typeof document === "undefined" || !document?.documentElement?.getAttribute) return false;
   const theme = document.documentElement.getAttribute("data-theme") || "";
-  return ["light", "nord-light", "solarized-light", "github-light", "sepia"].includes(theme);
+  return ["light", "nord-light", "solarized-light", "repo-light", "sepia"].includes(theme);
 }
 
 export function currentThemeName(): string {
   if (typeof document === "undefined" || !document?.documentElement?.getAttribute) return "dark";
-  return document.documentElement.getAttribute("data-theme") || "dark";
+  let theme = document.documentElement.getAttribute("data-theme") || "dark";
+  if (theme === "cyberpunk") theme = "neon-noir";
+  if (theme === "github-light") theme = "repo-light";
+  return theme;
 }
 
 export function cvar(name: string): string {
@@ -622,13 +625,13 @@ export const THEME_GALAXY_PALETTES: Record<string, readonly string[]> = {
   dark: GALAXY_PALETTE,
   tokyonight: [
     "#7dcfff", "#bb9af7", "#7aa2f7", "#f7768e", "#9ece6a",
-    "#e0af68", "#ff9e64", "#41a6b5", "#9d7cd8", "#3d59a1",
+    "#e0af68", "#ff9e64", "#73daca", "#2ac3de", "#db4b4b",
   ],
   synthwave: [
     "#ff007f", "#00f0ff", "#b026ff", "#ff5400", "#00ffcc",
     "#ff0055", "#7928ca", "#0080ff", "#ffe600", "#ea00d9",
   ],
-  cyberpunk: [
+  "neon-noir": [
     "#f3e600", "#55ead4", "#c5003c", "#54c1e6", "#fee801",
     "#39c4b6", "#9a9f17", "#880425", "#e5b800", "#ff003c",
   ],
@@ -641,12 +644,12 @@ export const THEME_GALAXY_PALETTES: Record<string, readonly string[]> = {
     "#14b8a6", "#fb7185", "#06b6d4", "#eab308", "#3b82f6",
   ],
   autumn: [
-    "#ea580c", "#eab308", "#c2410c", "#b45309", "#9a3412",
-    "#d97706", "#65a30d", "#78350f", "#b91c1c", "#854d0e",
+    "#f59e0b", "#ef4444", "#38bdf8", "#22c55e", "#f97316",
+    "#c084fc", "#84cc16", "#f43f5e", "#06b6d4", "#fbbf24",
   ],
   christmas: [
-    "#008571", "#a52019", "#80643f", "#861a22", "#1b5e46",
-    "#c5a059", "#2e8b67", "#9b111e", "#34785c", "#a58348",
+    "#fbbf24", "#ef4444", "#10b981", "#38bdf8", "#f59e0b",
+    "#f43f5e", "#34d399", "#008571", "#e11d48", "#fcd34d",
   ],
   light: LIGHT_GALAXY_PALETTE,
   "nord-light": [
@@ -657,7 +660,7 @@ export const THEME_GALAXY_PALETTES: Record<string, readonly string[]> = {
     "#268bd2", "#2aa198", "#859900", "#b58900", "#cb4b16",
     "#dc322f", "#d33682", "#6c71c4", "#586e75", "#1b7a73",
   ],
-  "github-light": [
+  "repo-light": [
     "#0969da", "#1a7f37", "#8250df", "#bc4c00", "#1b7c83",
     "#cf222e", "#9a6700", "#bf3989", "#3a49a8", "#54aeff",
   ],

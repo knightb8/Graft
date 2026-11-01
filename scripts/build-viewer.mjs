@@ -21,8 +21,20 @@ await build({
   outfile: join(outDir, "app.js"),
 });
 
-for (const asset of ["index.html", "style.css"]) {
-  copyFileSync(join(root, "viewer", asset), join(outDir, asset));
+await build({
+  entryPoints: [join(root, "viewer", "style.css")],
+  bundle: true,
+  minify: false,
+  outfile: join(outDir, "style.css"),
+});
+
+copyFileSync(join(root, "viewer", "index.html"), join(outDir, "index.html"));
+
+const stylesSrc = join(root, "viewer", "styles");
+const stylesOut = join(outDir, "styles");
+mkdirSync(stylesOut, { recursive: true });
+for (const f of readdirSync(stylesSrc)) {
+  copyFileSync(join(stylesSrc, f), join(stylesOut, f));
 }
 
 console.log("viewer bundle → dist/viewer/");

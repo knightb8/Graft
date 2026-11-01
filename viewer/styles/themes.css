@@ -1,0 +1,224 @@
+/* graft viz — design tokens + 13 atmospheric theme palettes.
+   Visual reference of record: docs/superpowers/specs/2026-07-15-graft-viz-design.md */
+:root{
+  --bg:#0A0D10; --panel:#14191E; --panel2:#1A2127; --ink:#E7E9EA; --muted:#8B9298;
+  --border:#263038; --border2:#1D242A; --accent:#38BDF8; --accent-ink:#0B1319;
+  --chip:#1A2127;
+  --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
+  --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
+  --scope-code:#38BDF8; --scope-docs:#C084FC; --scope-specs:#34D399; --scope-transitive:#FBBF24;
+  --stage-adrs:#A855F7; --stage-features:#10B981; --stage-code:#38BDF8; --stage-tests:#F59E0B; --stage-docs:#EC4899;
+  --rel-structure:#38BDF8; --rel-dependency:#FBBF24; --rel-contract:#10B981; --rel-association:#EC4899;
+  --amber:#FBBF24; --red:#EF4444;
+  --edge:#475569; --canvas:#0E1216;
+  --bubble-0:#38bdf8; --bubble-1:#818cf8; --bubble-2:#34d399; --bubble-3:#fb923c; --bubble-4:#2dd4bf;
+  --bubble-5:#facc15; --bubble-6:#a78bfa; --bubble-7:#60a5fa; --bubble-8:#f472b6; --bubble-9:#4ade80;
+}
+
+/* 1. Dark (Default Charcoal) */
+:root[data-theme="dark"]{
+  --bg:#0A0D10; --panel:#14191E; --panel2:#1A2127; --ink:#E7E9EA; --muted:#8B9298;
+  --border:#263038; --border2:#1D242A; --accent:#38BDF8; --accent-ink:#0B1319;
+  --chip:#1A2127;
+  --sys:#6B94F5; --con:#B487E0; --fil:#E0A04A; --api:#D183C9;
+  --k-file:#E0A04A; --k-class:#6B94F5; --k-fn:#7EAEDD; --k-method:#56B9D8; --k-iface:#B487E0; --k-type:#D183C9; --k-enum:#D4BB5E;
+  --scope-code:#38BDF8; --scope-docs:#C084FC; --scope-specs:#34D399; --scope-transitive:#FBBF24;
+  --stage-adrs:#A855F7; --stage-features:#10B981; --stage-code:#38BDF8; --stage-tests:#F59E0B; --stage-docs:#EC4899;
+  --rel-structure:#38BDF8; --rel-dependency:#FBBF24; --rel-contract:#10B981; --rel-association:#EC4899;
+  --amber:#FBBF24; --red:#EF4444;
+  --edge:#475569; --canvas:#0E1216;
+  --bubble-0:#38bdf8; --bubble-1:#818cf8; --bubble-2:#34d399; --bubble-3:#fb923c; --bubble-4:#2dd4bf;
+  --bubble-5:#facc15; --bubble-6:#a78bfa; --bubble-7:#60a5fa; --bubble-8:#f472b6; --bubble-9:#4ade80;
+}
+
+/* 2. Tokyo Night (Folke Neovim inspired) */
+:root[data-theme="tokyonight"]{
+  --bg:#1A1B26; --panel:#1F2335; --panel2:#24283B; --ink:#C0CAF5; --muted:#787C99;
+  --border:#292E42; --border2:#3B4261; --accent:#7AA2F7; --accent-ink:#1A1B26;
+  --chip:#24283B;
+  --sys:#7AA2F7; --con:#DB4B4B; --fil:#FF9E64; --api:#2AC3DE;
+  --k-file:#FF9E64; --k-class:#7AA2F7; --k-fn:#7DCFFF; --k-method:#73DACA; --k-iface:#2AC3DE; --k-type:#DB4B4B; --k-enum:#E0AF68;
+  --scope-code:#7AA2F7; --scope-docs:#F7768E; --scope-specs:#9ECE6A; --scope-transitive:#FF9E64;
+  --stage-adrs:#BB9AF7; --stage-features:#9ECE6A; --stage-code:#7AA2F7; --stage-tests:#E0AF68; --stage-docs:#F7768E;
+  --rel-structure:#7AA2F7; --rel-dependency:#E0AF68; --rel-contract:#73DACA; --rel-association:#FF9E64;
+  --amber:#E0AF68; --red:#F7768E;
+  --edge:#414868; --canvas:#16161E;
+  --bubble-0:#7dcfff; --bubble-1:#bb9af7; --bubble-2:#7aa2f7; --bubble-3:#f7768e; --bubble-4:#9ece6a;
+  --bubble-5:#e0af68; --bubble-6:#ff9e64; --bubble-7:#73daca; --bubble-8:#2ac3de; --bubble-9:#db4b4b;
+}
+
+/* 3. Synthwave / Outrun (Neon Grid & Laser Cyan) */
+:root[data-theme="synthwave"]{
+  --bg:#0C051C; --panel:#160B30; --panel2:#211046; --ink:#F8F6FF; --muted:#B8A3E0;
+  --border:#A11F7C; --border2:#5E1349; --accent:#0FF0FC; --accent-ink:#0C051C;
+  --chip:#211046;
+  --sys:#0FF0FC; --con:#FF007F; --fil:#FFE600; --api:#FF00A0;
+  --k-file:#FFE600; --k-class:#0FF0FC; --k-fn:#38BDF8; --k-method:#39FF14; --k-iface:#FF007F; --k-type:#FF00A0; --k-enum:#FFE600;
+  --scope-code:#0FF0FC; --scope-docs:#FF007F; --scope-specs:#39FF14; --scope-transitive:#FFE600;
+  --stage-adrs:#FF00A0; --stage-features:#39FF14; --stage-code:#0FF0FC; --stage-tests:#FFE600; --stage-docs:#FF007F;
+  --rel-structure:#0FF0FC; --rel-dependency:#FFE600; --rel-contract:#39FF14; --rel-association:#FF007F;
+  --amber:#FFE600; --red:#FF007F;
+  --edge:#7E1763; --canvas:#070212;
+  --bubble-0:#ff007f; --bubble-1:#00f0ff; --bubble-2:#b026ff; --bubble-3:#ff5400; --bubble-4:#00ffcc;
+  --bubble-5:#ff0055; --bubble-6:#7928ca; --bubble-7:#0080ff; --bubble-8:#ffe600; --bubble-9:#ea00d9;
+}
+
+/* 4. Neon Noir (Electric Yellow, Cyan, Crimson & Title Palette) */
+:root[data-theme="neon-noir"]{
+  --bg:#00060e; --panel:#050c17; --panel2:#0b1422; --ink:#f3e600; --muted:#54c1e6;
+  --border:#880425; --border2:#c5003c66; --accent:#fee801; --accent-ink:#000000;
+  --chip:#0c1826;
+  --sys:#55ead4; --con:#c5003c; --fil:#f3e600; --api:#54c1e6;
+  --k-file:#f3e600; --k-class:#55ead4; --k-fn:#54c1e6; --k-method:#39c4b6; --k-iface:#c5003c; --k-type:#9a9f17; --k-enum:#fee801;
+  --scope-code:#55ead4; --scope-docs:#c5003c; --scope-specs:#f3e600; --scope-transitive:#fee801;
+  --stage-adrs:#54c1e6; --stage-features:#9a9f17; --stage-code:#55ead4; --stage-tests:#f3e600; --stage-docs:#c5003c;
+  --rel-structure:#55ead4; --rel-dependency:#f3e600; --rel-contract:#39c4b6; --rel-association:#c5003c;
+  --amber:#fee801; --red:#c5003c;
+  --edge:#39c4b644; --canvas:#000000;
+  --bubble-0:#f3e600; --bubble-1:#55ead4; --bubble-2:#c5003c; --bubble-3:#54c1e6; --bubble-4:#fee801;
+  --bubble-5:#39c4b6; --bubble-6:#9a9f17; --bubble-7:#880425; --bubble-8:#e5b800; --bubble-9:#ff003c;
+}
+
+/* 5. Spring (Sakura Blossoms & Young Shoots) */
+:root[data-theme="spring"]{
+  --bg:#0D1713; --panel:#14241D; --panel2:#1B3027; --ink:#F0FDF4; --muted:#86EFAC;
+  --border:#2D5443; --border2:#213F32; --accent:#F472B6; --accent-ink:#500724;
+  --chip:#1B3027;
+  --sys:#38BDF8; --con:#F472B6; --fil:#FACC15; --api:#FB7185;
+  --k-file:#FACC15; --k-class:#38BDF8; --k-fn:#2DD4BF; --k-method:#4ADE80; --k-iface:#F472B6; --k-type:#FB7185; --k-enum:#FDE047;
+  --scope-code:#38BDF8; --scope-docs:#F472B6; --scope-specs:#4ADE80; --scope-transitive:#FACC15;
+  --stage-adrs:#C084FC; --stage-features:#34D399; --stage-code:#38BDF8; --stage-tests:#FACC15; --stage-docs:#F472B6;
+  --rel-structure:#38BDF8; --rel-dependency:#FACC15; --rel-contract:#34D399; --rel-association:#F472B6;
+  --amber:#FACC15; --red:#FB7185;
+  --edge:#2D5443; --canvas:#08100C;
+  --bubble-0:#f472b6; --bubble-1:#34d399; --bubble-2:#38bdf8; --bubble-3:#4ade80; --bubble-4:#fb7185;
+  --bubble-5:#facc15; --bubble-6:#a7f3d0; --bubble-7:#c084fc; --bubble-8:#10b981; --bubble-9:#fda4af;
+}
+
+/* 6. Summer (Azure Ocean & Coral Reef) */
+:root[data-theme="summer"]{
+  --bg:#051622; --panel:#0B2334; --panel2:#112F45; --ink:#E0F2FE; --muted:#7DD3FC;
+  --border:#1B4965; --border2:#14374D; --accent:#FF6B6B; --accent-ink:#450A0A;
+  --chip:#112F45;
+  --sys:#38BDF8; --con:#A78BFA; --fil:#FB923C; --api:#F43F5E;
+  --k-file:#FB923C; --k-class:#38BDF8; --k-fn:#06B6D4; --k-method:#2DD4BF; --k-iface:#A78BFA; --k-type:#F43F5E; --k-enum:#FBBF24;
+  --scope-code:#38BDF8; --scope-docs:#A78BFA; --scope-specs:#2DD4BF; --scope-transitive:#FB923C;
+  --stage-adrs:#A78BFA; --stage-features:#2DD4BF; --stage-code:#38BDF8; --stage-tests:#FB923C; --stage-docs:#FF6B6B;
+  --rel-structure:#38BDF8; --rel-dependency:#FB923C; --rel-contract:#2DD4BF; --rel-association:#A78BFA;
+  --amber:#FB923C; --red:#FF6B6B;
+  --edge:#1E5272; --canvas:#03101A;
+  --bubble-0:#38bdf8; --bubble-1:#ff6b6b; --bubble-2:#2dd4bf; --bubble-3:#f59e0b; --bubble-4:#0ea5e9;
+  --bubble-5:#14b8a6; --bubble-6:#fb7185; --bubble-7:#06b6d4; --bubble-8:#eab308; --bubble-9:#3b82f6;
+}
+
+/* 7. Autumn (Maple Amber & Burnt Cinnamon) */
+:root[data-theme="autumn"]{
+  --bg:#14100D; --panel:#1C1612; --panel2:#261E19; --ink:#FEF3C7; --muted:#A8927D;
+  --border:#3F3026; --border2:#544033; --accent:#F97316; --accent-ink:#14100D;
+  --chip:#261E19;
+  --sys:#F59E0B; --con:#C084FC; --fil:#F97316; --api:#38BDF8;
+  --k-file:#F97316; --k-class:#F59E0B; --k-fn:#38BDF8; --k-method:#22C55E; --k-iface:#06B6D4; --k-type:#C084FC; --k-enum:#FBBF24;
+  --scope-code:#F59E0B; --scope-docs:#EF4444; --scope-specs:#22C55E; --scope-transitive:#F97316;
+  --stage-adrs:#C084FC; --stage-features:#22C55E; --stage-code:#F59E0B; --stage-tests:#F97316; --stage-docs:#EF4444;
+  --rel-structure:#F59E0B; --rel-dependency:#F97316; --rel-contract:#22C55E; --rel-association:#C084FC;
+  --amber:#F59E0B; --red:#EF4444;
+  --edge:#4A382C; --canvas:#0C0A09;
+  --bubble-0:#f59e0b; --bubble-1:#ef4444; --bubble-2:#38bdf8; --bubble-3:#22c55e; --bubble-4:#f97316;
+  --bubble-5:#c084fc; --bubble-6:#84cc16; --bubble-7:#f43f5e; --bubble-8:#06b6d4; --bubble-9:#fbbf24;
+}
+
+/* 8. Christmas (Weihnachts-RAL: RAL 180 50 40, RAL 6005, RAL 3001, RAL 3003, RAL 1036) */
+:root[data-theme="christmas"]{
+  --bg:#07160E; --panel:#0D2619; --panel2:#114232; --ink:#FEFCE8; --muted:#6EE7B7;
+  --border:#114232; --border2:#861A22; --accent:#EF4444; --accent-ink:#FFFFFF;
+  --chip:#114232;
+  --sys:#008571; --con:#A52019; --fil:#80643F; --api:#861A22;
+  --k-file:#80643F; --k-class:#008571; --k-fn:#10B981; --k-method:#114232; --k-iface:#A52019; --k-type:#861A22; --k-enum:#FBBF24;
+  --scope-code:#FBBF24; --scope-docs:#A52019; --scope-specs:#008571; --scope-transitive:#80643F;
+  --stage-adrs:#861A22; --stage-features:#10B981; --stage-code:#FBBF24; --stage-tests:#EF4444; --stage-docs:#861A22;
+  --rel-structure:#008571; --rel-dependency:#80643F; --rel-contract:#10B981; --rel-association:#A52019;
+  --amber:#80643F; --red:#A52019;
+  --edge:#154D3588; --canvas:#040E09;
+  --bubble-0:#fbbf24; --bubble-1:#ef4444; --bubble-2:#10b981; --bubble-3:#38bdf8; --bubble-4:#f59e0b;
+  --bubble-5:#f43f5e; --bubble-6:#34d399; --bubble-7:#008571; --bubble-8:#e11d48; --bubble-9:#fcd34d;
+}
+
+/* 9. Light (Crisp High-Contrast Clean Slate) */
+:root[data-theme="light"]{
+  --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#F1F5F9; --ink:#0F172A; --muted:#475569;
+  --border:#CBD5E1; --border2:#E2E8F0; --accent:#0284C7; --accent-ink:#FFFFFF;
+  --chip:#F1F5F9;
+  --sys:#2563EB; --con:#7C3AED; --fil:#D97706; --api:#DB2777;
+  --k-file:#D97706; --k-class:#2563EB; --k-fn:#0284C7; --k-method:#0D9488; --k-iface:#7C3AED; --k-type:#DB2777; --k-enum:#CA8A04;
+  --scope-code:#0284C7; --scope-docs:#7C3AED; --scope-specs:#059669; --scope-transitive:#D97706;
+  --stage-adrs:#7C3AED; --stage-features:#059669; --stage-code:#0284C7; --stage-tests:#D97706; --stage-docs:#DB2777;
+  --rel-structure:#0284C7; --rel-dependency:#D97706; --rel-contract:#059669; --rel-association:#7C3AED;
+  --amber:#D97706; --red:#DC2626;
+  --edge:#94A3B8; --canvas:#FFFFFF;
+  --bubble-0:#0284c7; --bubble-1:#059669; --bubble-2:#4f46e5; --bubble-3:#ea580c; --bubble-4:#0d9488;
+  --bubble-5:#d97706; --bubble-6:#7c3aed; --bubble-7:#e11d48; --bubble-8:#2563eb; --bubble-9:#16a34a;
+}
+
+/* 10. Nord Light (Snow Storm & Frost) */
+:root[data-theme="nord-light"]{
+  --bg:#ECEFF4; --panel:#FFFFFF; --panel2:#E5E9F0; --ink:#2E3440; --muted:#4C566A;
+  --border:#D8DEE9; --border2:#E5E9F0; --accent:#5E81AC; --accent-ink:#FFFFFF;
+  --chip:#E5E9F0;
+  --sys:#5E81AC; --con:#B48EAD; --fil:#D08770; --api:#BF616A;
+  --k-file:#D08770; --k-class:#5E81AC; --k-fn:#81A1C1; --k-method:#88C0D0; --k-iface:#B48EAD; --k-type:#BF616A; --k-enum:#EBCB8B;
+  --scope-code:#5E81AC; --scope-docs:#B48EAD; --scope-specs:#A3BE8C; --scope-transitive:#D08770;
+  --stage-adrs:#B48EAD; --stage-features:#A3BE8C; --stage-code:#5E81AC; --stage-tests:#D08770; --stage-docs:#BF616A;
+  --rel-structure:#5E81AC; --rel-dependency:#D08770; --rel-contract:#A3BE8C; --rel-association:#B48EAD;
+  --amber:#D08770; --red:#BF616A;
+  --edge:#88C0D0; --canvas:#ECEFF4;
+  --bubble-0:#5e81ac; --bubble-1:#88c0d0; --bubble-2:#a3be8c; --bubble-3:#d08770; --bubble-4:#81a1c1;
+  --bubble-5:#ebcb8b; --bubble-6:#b48ead; --bubble-7:#bf616a; --bubble-8:#4c566a; --bubble-9:#2e3440;
+}
+
+/* 11. Solarized Light (Precision Warm Paper) */
+:root[data-theme="solarized-light"]{
+  --bg:#FDF6E3; --panel:#EEE8D5; --panel2:#E0D9C1; --ink:#073642; --muted:#586E75;
+  --border:#D3CBB7; --border2:#C8BFAB; --accent:#268BD2; --accent-ink:#FDF6E3;
+  --chip:#EEE8D5;
+  --sys:#268BD2; --con:#6C71C4; --fil:#CB4B16; --api:#D33682;
+  --k-file:#CB4B16; --k-class:#268BD2; --k-fn:#2AA198; --k-method:#859900; --k-iface:#6C71C4; --k-type:#D33682; --k-enum:#B58900;
+  --scope-code:#268BD2; --scope-docs:#6C71C4; --scope-specs:#859900; --scope-transitive:#CB4B16;
+  --stage-adrs:#6C71C4; --stage-features:#859900; --stage-code:#268BD2; --stage-tests:#B58900; --stage-docs:#D33682;
+  --rel-structure:#268BD2; --rel-dependency:#B58900; --rel-contract:#859900; --rel-association:#6C71C4;
+  --amber:#B58900; --red:#DC322F;
+  --edge:#93A1A1; --canvas:#FDF6E3;
+  --bubble-0:#268bd2; --bubble-1:#2aa198; --bubble-2:#859900; --bubble-3:#b58900; --bubble-4:#cb4b16;
+  --bubble-5:#dc322f; --bubble-6:#d33682; --bubble-7:#6c71c4; --bubble-8:#586e75; --bubble-9:#1b7a73;
+}
+
+/* 12. Repo Light (Clean Repository Workspace) */
+:root[data-theme="repo-light"]{
+  --bg:#FFFFFF; --panel:#F6F8FA; --panel2:#EAEEF2; --ink:#1F2328; --muted:#57606A;
+  --border:#D0D7DE; --border2:#AFB8C1; --accent:#0969DA; --accent-ink:#FFFFFF;
+  --chip:#F6F8FA;
+  --sys:#0969DA; --con:#8250DF; --fil:#9A6700; --api:#BF3989;
+  --k-file:#9A6700; --k-class:#0969DA; --k-fn:#0550AE; --k-method:#1A7F37; --k-iface:#8250DF; --k-type:#BF3989; --k-enum:#BC4C00;
+  --scope-code:#0969DA; --scope-docs:#8250DF; --scope-specs:#1A7F37; --scope-transitive:#9A6700;
+  --stage-adrs:#8250DF; --stage-features:#1A7F37; --stage-code:#0969DA; --stage-tests:#9A6700; --stage-docs:#BF3989;
+  --rel-structure:#0969DA; --rel-dependency:#9A6700; --rel-contract:#1A7F37; --rel-association:#8250DF;
+  --amber:#9A6700; --red:#CF222E;
+  --edge:#AFB8C1; --canvas:#FFFFFF;
+  --bubble-0:#0969da; --bubble-1:#1a7f37; --bubble-2:#8250df; --bubble-3:#bc4c00; --bubble-4:#1b7c83;
+  --bubble-5:#cf222e; --bubble-6:#9a6700; --bubble-7:#bf3989; --bubble-8:#3a49a8; --bubble-9:#54aeff;
+}
+
+/* 13. Sepia (Warm Editorial Parchment) */
+:root[data-theme="sepia"]{
+  --bg:#F4ECD8; --panel:#FAF6ED; --panel2:#EDE3CD; --ink:#2C2216; --muted:#6E5F4E;
+  --border:#DACDB1; --border2:#C9BBA0; --accent:#9A3412; --accent-ink:#FAF6ED;
+  --chip:#EDE3CD;
+  --sys:#0369A1; --con:#4338CA; --fil:#9A3412; --api:#A21CAF;
+  --k-file:#9A3412; --k-class:#0369A1; --k-fn:#0F766E; --k-method:#15803D; --k-iface:#4338CA; --k-type:#A21CAF; --k-enum:#B45309;
+  --scope-code:#0369A1; --scope-docs:#4338CA; --scope-specs:#15803D; --scope-transitive:#9A3412;
+  --stage-adrs:#4338CA; --stage-features:#15803D; --stage-code:#0369A1; --stage-tests:#B45309; --stage-docs:#9A3412;
+  --rel-structure:#0369A1; --rel-dependency:#B45309; --rel-contract:#15803D; --rel-association:#4338CA;
+  --amber:#B45309; --red:#B91C1C;
+  --edge:#B8A88E; --canvas:#F4ECD8;
+  --bubble-0:#b45309; --bubble-1:#78350f; --bubble-2:#c2410c; --bubble-3:#656c38; --bubble-4:#d97706;
+  --bubble-5:#92400e; --bubble-6:#831843; --bubble-7:#365314; --bubble-8:#991b1b; --bubble-9:#a16207;
+}

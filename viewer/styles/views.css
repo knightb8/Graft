@@ -1,0 +1,39 @@
+/* graft viz — specialized view styling (Sankey flow, Wheel, Fishbone) */
+
+/* Stacked Lifecycle Flow (Sankey) card affordances */
+.sankey-bar {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity 0.12s ease;
+}
+.sankey-bar rect.sankey-bar-bg {
+  transition: fill 0.12s ease, stroke 0.12s ease, stroke-width 0.12s ease;
+}
+.sankey-bar:hover {
+  opacity: 1 !important;
+}
+.sankey-bar:hover rect.sankey-bar-bg {
+  fill: var(--panel2, #232930);
+  stroke: var(--accent, #38bdf8);
+  stroke-width: 1.6px;
+}
+.sankey-bar.is-dragging {
+  cursor: grabbing !important;
+}
+.sankey-bar text {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sankey-chevron-hit {
+  cursor: pointer;
+  pointer-events: all;
+}
+.sankey-chevron-hit rect {
+  fill: transparent;
+  transition: fill 0.12s ease;
+}
+.sankey-chevron-hit:hover rect {
+  fill: rgba(255, 255, 255, 0.16);
+}

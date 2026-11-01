@@ -822,7 +822,7 @@ const ALL_THEMES = [
   "dark",
   "tokyonight",
   "synthwave",
-  "cyberpunk",
+  "neon-noir",
   "spring",
   "summer",
   "autumn",
@@ -830,13 +830,13 @@ const ALL_THEMES = [
   "light",
   "nord-light",
   "solarized-light",
-  "github-light",
+  "repo-light",
   "sepia",
 ] as const;
 type ThemeName = typeof ALL_THEMES[number];
 
-const LIGHT_THEMES: readonly string[] = ["light", "nord-light", "solarized-light", "github-light", "sepia"];
-const DARK_THEMES: readonly string[] = ["dark", "tokyonight", "synthwave", "cyberpunk", "spring", "summer", "autumn", "christmas"];
+const LIGHT_THEMES: readonly string[] = ["light", "nord-light", "solarized-light", "repo-light", "sepia"];
+const DARK_THEMES: readonly string[] = ["dark", "tokyonight", "synthwave", "neon-noir", "spring", "summer", "autumn", "christmas"];
 
 const SUN_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
 const MOON_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>`;
@@ -855,8 +855,11 @@ function updateThemeButton(themeName: string): void {
 }
 
 function applyTheme(name: string): void {
-  const validTheme: ThemeName = (ALL_THEMES as readonly string[]).includes(name)
-    ? (name as ThemeName)
+  let mapped = name;
+  if (mapped === "cyberpunk") mapped = "neon-noir";
+  if (mapped === "github-light") mapped = "repo-light";
+  const validTheme: ThemeName = (ALL_THEMES as readonly string[]).includes(mapped)
+    ? (mapped as ThemeName)
     : "dark";
   const root = document.documentElement;
   root.setAttribute("data-theme", validTheme);
@@ -890,7 +893,9 @@ function applyTheme(name: string): void {
   }
 }
 
-const savedTheme = localStorage.getItem(THEME_KEY);
+let savedTheme = localStorage.getItem(THEME_KEY);
+if (savedTheme === "cyberpunk") savedTheme = "neon-noir";
+if (savedTheme === "github-light") savedTheme = "repo-light";
 const initialTheme = savedTheme && (ALL_THEMES as readonly string[]).includes(savedTheme)
   ? savedTheme
   : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
