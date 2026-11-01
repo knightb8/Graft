@@ -150,3 +150,70 @@ test("christmas theme integrates authentic Weihnachts-RAL color palette", async 
     );
   }
 });
+
+test("all 13 themes define dedicated space bubble palettes (--bubble-0 to --bubble-9)", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
+  const { THEME_GALAXY_PALETTES } = await import("../viewer/data.js");
+
+  const expectedThemes = [
+    "dark",
+    "tokyonight",
+    "synthwave",
+    "cyberpunk",
+    "spring",
+    "summer",
+    "autumn",
+    "christmas",
+    "light",
+    "nord-light",
+    "solarized-light",
+    "github-light",
+    "sepia",
+  ];
+
+  for (const theme of expectedThemes) {
+    // 1. Verify CSS definition
+    const match = css.match(new RegExp(`:root\\[data-theme="${theme}"\\]\\{([^}]+)\\}`));
+    assert.ok(match, `Theme block ${theme} must exist in style.css`);
+    const block = match[1];
+    for (let i = 0; i < 10; i++) {
+      assert.ok(
+        block.includes(`--bubble-${i}:`),
+        `Theme ${theme} must define --bubble-${i} in style.css`
+      );
+    }
+
+    // 2. Verify TypeScript fallback dictionary
+    const pal = THEME_GALAXY_PALETTES[theme];
+    assert.ok(Array.isArray(pal), `THEME_GALAXY_PALETTES must include ${theme}`);
+    assert.equal(pal.length, 10, `THEME_GALAXY_PALETTES[${theme}] must contain 10 colors`);
+  }
+});
+
+test("theme signature watermarks render valid SVGs for all 13 themes", async () => {
+  const { renderThemeWatermark } = await import("../viewer/watermark.js");
+
+  const themes = [
+    "dark",
+    "tokyonight",
+    "synthwave",
+    "cyberpunk",
+    "spring",
+    "summer",
+    "autumn",
+    "christmas",
+    "light",
+    "nord-light",
+    "solarized-light",
+    "github-light",
+    "sepia",
+  ];
+
+  for (const theme of themes) {
+    const svg = renderThemeWatermark(theme);
+    assert.ok(svg.includes("<svg"), `Theme watermark for ${theme} must contain <svg>`);
+    assert.ok(svg.includes("</svg>"), `Theme watermark for ${theme} must close </svg>`);
+  }
+});

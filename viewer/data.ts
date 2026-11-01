@@ -204,6 +204,11 @@ export function isLightTheme(): boolean {
   return ["light", "nord-light", "solarized-light", "github-light", "sepia"].includes(theme);
 }
 
+export function currentThemeName(): string {
+  if (typeof document === "undefined" || !document?.documentElement?.getAttribute) return "dark";
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
 export function cvar(name: string): string {
   const defaults: Record<string, string> = {
     "--ink": "#E7E9EA",
@@ -234,10 +239,23 @@ export function cvar(name: string): string {
     "--rel-association": "#ec4899",
   };
   if (typeof getComputedStyle === "undefined" || typeof document === "undefined" || !document?.documentElement) {
+    if (name.startsWith("--bubble-")) {
+      const idx = parseInt(name.slice(9), 10);
+      const theme = currentThemeName();
+      const pal = THEME_GALAXY_PALETTES[theme] || GALAXY_PALETTE;
+      return pal[idx % pal.length] || "#888888";
+    }
     return defaults[name] ?? "#888888";
   }
   const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return val || defaults[name] || "#888888";
+  if (val) return val;
+  if (name.startsWith("--bubble-")) {
+    const idx = parseInt(name.slice(9), 10);
+    const theme = currentThemeName();
+    const pal = THEME_GALAXY_PALETTES[theme] || GALAXY_PALETTE;
+    return pal[idx % pal.length] || "#888888";
+  }
+  return defaults[name] || "#888888";
 }
 
 /**
@@ -571,23 +589,23 @@ export function synthesizeDirectoryTree(graph: VizGraph): VizGraph {
 /** High-contrast subsystem galaxy palette for aggregated file containers (Dark). */
 export const GALAXY_PALETTE = [
   "#38bdf8", // Sky Blue
-  "#fb923c", // Tangerine
   "#818cf8", // Indigo
-  "#f472b6", // Pink
+  "#34d399", // Mint
+  "#fb923c", // Tangerine
   "#2dd4bf", // Teal
   "#facc15", // Sunny Gold
-  "#c084fc", // Lavender
-  "#fb7185", // Rose Coral
+  "#a78bfa", // Purple
   "#60a5fa", // Cobalt
-  "#a3e635", // Lime
+  "#f472b6", // Pink
+  "#4ade80", // Spring Green
 ];
 
 /** Rich, deeply-saturated subsystem galaxy palette for aggregated file containers (Light). */
 export const LIGHT_GALAXY_PALETTE = [
   "#0284c7", // Sky 600
-  "#ea580c", // Orange 600
+  "#059669", // Emerald 600
   "#4f46e5", // Indigo 600
-  "#db2777", // Pink 600
+  "#ea580c", // Orange 600
   "#0d9488", // Teal 600
   "#d97706", // Amber 600
   "#7c3aed", // Violet 600
@@ -597,8 +615,61 @@ export const LIGHT_GALAXY_PALETTE = [
 ];
 
 /**
+ * Dedicated, harmonized 10-color space bubble galaxy palettes for all 13 themes.
+ * Prevents color bleed and preserves theme-native atmosphere across every visualizer.
+ */
+export const THEME_GALAXY_PALETTES: Record<string, readonly string[]> = {
+  dark: GALAXY_PALETTE,
+  tokyonight: [
+    "#7dcfff", "#bb9af7", "#7aa2f7", "#f7768e", "#9ece6a",
+    "#e0af68", "#ff9e64", "#41a6b5", "#9d7cd8", "#3d59a1",
+  ],
+  synthwave: [
+    "#ff007f", "#00f0ff", "#b026ff", "#ff5400", "#00ffcc",
+    "#ff0055", "#7928ca", "#0080ff", "#ffe600", "#ea00d9",
+  ],
+  cyberpunk: [
+    "#f3e600", "#55ead4", "#c5003c", "#54c1e6", "#fee801",
+    "#39c4b6", "#9a9f17", "#880425", "#e5b800", "#ff003c",
+  ],
+  spring: [
+    "#f472b6", "#34d399", "#38bdf8", "#4ade80", "#fb7185",
+    "#facc15", "#a7f3d0", "#c084fc", "#10b981", "#fda4af",
+  ],
+  summer: [
+    "#38bdf8", "#ff6b6b", "#2dd4bf", "#f59e0b", "#0ea5e9",
+    "#14b8a6", "#fb7185", "#06b6d4", "#eab308", "#3b82f6",
+  ],
+  autumn: [
+    "#ea580c", "#eab308", "#c2410c", "#b45309", "#9a3412",
+    "#d97706", "#65a30d", "#78350f", "#b91c1c", "#854d0e",
+  ],
+  christmas: [
+    "#008571", "#a52019", "#80643f", "#861a22", "#1b5e46",
+    "#c5a059", "#2e8b67", "#9b111e", "#34785c", "#a58348",
+  ],
+  light: LIGHT_GALAXY_PALETTE,
+  "nord-light": [
+    "#5e81ac", "#88c0d0", "#a3be8c", "#d08770", "#81a1c1",
+    "#ebcb8b", "#b48ead", "#bf616a", "#4c566a", "#2e3440",
+  ],
+  "solarized-light": [
+    "#268bd2", "#2aa198", "#859900", "#b58900", "#cb4b16",
+    "#dc322f", "#d33682", "#6c71c4", "#586e75", "#1b7a73",
+  ],
+  "github-light": [
+    "#0969da", "#1a7f37", "#8250df", "#bc4c00", "#1b7c83",
+    "#cf222e", "#9a6700", "#bf3989", "#3a49a8", "#54aeff",
+  ],
+  sepia: [
+    "#b45309", "#78350f", "#c2410c", "#656c38", "#d97706",
+    "#92400e", "#831843", "#365314", "#991b1b", "#a16207",
+  ],
+};
+
+/**
  * Deterministically maps a subsystem cluster key to a distinct galaxy color,
- * while preserving canonical tripartite colors for specs and docs, dynamically adapting to light/dark themes.
+ * while preserving canonical tripartite colors for specs and docs, dynamically adapting to each theme's native bubble palette.
  */
 export function galaxyColorOfCluster(clusterKey: string, scope: string): string {
   if (scope === "specs" || clusterKey.startsWith("features")) {
@@ -611,8 +682,14 @@ export function galaxyColorOfCluster(clusterKey: string, scope: string): string 
   for (let i = 0; i < clusterKey.length; i++) {
     hash = (hash * 31 + clusterKey.charCodeAt(i)) >>> 0;
   }
-  const palette = isLightTheme() ? LIGHT_GALAXY_PALETTE : GALAXY_PALETTE;
-  return palette[hash % palette.length];
+  const idx = hash % 10;
+  const theme = currentThemeName();
+  const cssVarColor = cvar(`--bubble-${idx}`);
+  if (cssVarColor && cssVarColor !== "#888888") {
+    return cssVarColor;
+  }
+  const palette = THEME_GALAXY_PALETTES[theme] || (isLightTheme() ? LIGHT_GALAXY_PALETTE : GALAXY_PALETTE);
+  return palette[idx % palette.length];
 }
 
 export type EdgeContractionMode = "coupled" | "code" | "spec" | "doc" | "directory";

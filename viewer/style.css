@@ -11,6 +11,8 @@
   --rel-structure:#38BDF8; --rel-dependency:#FBBF24; --rel-contract:#10B981; --rel-association:#EC4899;
   --amber:#FBBF24; --red:#EF4444;
   --edge:#475569; --canvas:#0E1216;
+  --bubble-0:#38bdf8; --bubble-1:#818cf8; --bubble-2:#34d399; --bubble-3:#fb923c; --bubble-4:#2dd4bf;
+  --bubble-5:#facc15; --bubble-6:#a78bfa; --bubble-7:#60a5fa; --bubble-8:#f472b6; --bubble-9:#4ade80;
 }
 
 /* 1. Dark (Default Charcoal) */
@@ -25,6 +27,8 @@
   --rel-structure:#38BDF8; --rel-dependency:#FBBF24; --rel-contract:#10B981; --rel-association:#EC4899;
   --amber:#FBBF24; --red:#EF4444;
   --edge:#475569; --canvas:#0E1216;
+  --bubble-0:#38bdf8; --bubble-1:#818cf8; --bubble-2:#34d399; --bubble-3:#fb923c; --bubble-4:#2dd4bf;
+  --bubble-5:#facc15; --bubble-6:#a78bfa; --bubble-7:#60a5fa; --bubble-8:#f472b6; --bubble-9:#4ade80;
 }
 
 /* 2. Tokyo Night (Folke Neovim inspired) */
@@ -39,6 +43,8 @@
   --rel-structure:#7AA2F7; --rel-dependency:#E0AF68; --rel-contract:#9ECE6A; --rel-association:#BB9AF7;
   --amber:#E0AF68; --red:#F7768E;
   --edge:#414868; --canvas:#16161E;
+  --bubble-0:#7dcfff; --bubble-1:#bb9af7; --bubble-2:#7aa2f7; --bubble-3:#f7768e; --bubble-4:#9ece6a;
+  --bubble-5:#e0af68; --bubble-6:#ff9e64; --bubble-7:#41a6b5; --bubble-8:#9d7cd8; --bubble-9:#3d59a1;
 }
 
 /* 3. Synthwave / Tron (Neon Grid & Laser Cyan) */
@@ -53,6 +59,8 @@
   --rel-structure:#0FF0FC; --rel-dependency:#FFE600; --rel-contract:#39FF14; --rel-association:#FF007F;
   --amber:#FFE600; --red:#FF007F;
   --edge:#7E1763; --canvas:#070212;
+  --bubble-0:#ff007f; --bubble-1:#00f0ff; --bubble-2:#b026ff; --bubble-3:#ff5400; --bubble-4:#00ffcc;
+  --bubble-5:#ff0055; --bubble-6:#7928ca; --bubble-7:#0080ff; --bubble-8:#ffe600; --bubble-9:#ea00d9;
 }
 
 /* 4. Cyberpunk 2077 (Night City Electric Yellow, Cyan, Crimson & Title Palette) */
@@ -67,6 +75,8 @@
   --rel-structure:#55ead4; --rel-dependency:#f3e600; --rel-contract:#39c4b6; --rel-association:#c5003c;
   --amber:#fee801; --red:#c5003c;
   --edge:#39c4b644; --canvas:#000000;
+  --bubble-0:#f3e600; --bubble-1:#55ead4; --bubble-2:#c5003c; --bubble-3:#54c1e6; --bubble-4:#fee801;
+  --bubble-5:#39c4b6; --bubble-6:#9a9f17; --bubble-7:#880425; --bubble-8:#e5b800; --bubble-9:#ff003c;
 }
 
 /* 5. Spring (Sakura Blossoms & Young Shoots) */
@@ -81,6 +91,8 @@
   --rel-structure:#38BDF8; --rel-dependency:#FACC15; --rel-contract:#34D399; --rel-association:#F472B6;
   --amber:#FACC15; --red:#FB7185;
   --edge:#2D5443; --canvas:#08100C;
+  --bubble-0:#f472b6; --bubble-1:#34d399; --bubble-2:#38bdf8; --bubble-3:#4ade80; --bubble-4:#fb7185;
+  --bubble-5:#facc15; --bubble-6:#a7f3d0; --bubble-7:#c084fc; --bubble-8:#10b981; --bubble-9:#fda4af;
 }
 
 /* 6. Summer (Azure Ocean & Coral Reef) */
@@ -95,6 +107,8 @@
   --rel-structure:#38BDF8; --rel-dependency:#FB923C; --rel-contract:#2DD4BF; --rel-association:#A78BFA;
   --amber:#FB923C; --red:#FF6B6B;
   --edge:#1E5272; --canvas:#03101A;
+  --bubble-0:#38bdf8; --bubble-1:#ff6b6b; --bubble-2:#2dd4bf; --bubble-3:#f59e0b; --bubble-4:#0ea5e9;
+  --bubble-5:#14b8a6; --bubble-6:#fb7185; --bubble-7:#06b6d4; --bubble-8:#eab308; --bubble-9:#3b82f6;
 }
 
 /* 7. Autumn (Maple Amber & Burnt Cinnamon) */
@@ -109,6 +123,8 @@
   --rel-structure:#EAB308; --rel-dependency:#EA580C; --rel-contract:#65A30D; --rel-association:#B91C1C;
   --amber:#EA580C; --red:#DC2626;
   --edge:#5C3A20; --canvas:#100905;
+  --bubble-0:#ea580c; --bubble-1:#eab308; --bubble-2:#c2410c; --bubble-3:#b45309; --bubble-4:#9a3412;
+  --bubble-5:#d97706; --bubble-6:#65a30d; --bubble-7:#78350f; --bubble-8:#b91c1c; --bubble-9:#854d0e;
 }
 
 /* 8. Christmas (Weihnachts-RAL: RAL 180 50 40, RAL 6005, RAL 3001, RAL 3003, RAL 1036) */
@@ -123,6 +139,8 @@
   --rel-structure:#008571; --rel-dependency:#80643f; --rel-contract:#008571; --rel-association:#a52019;
   --amber:#80643f; --red:#a52019;
   --edge:#11423288; --canvas:#030d08;
+  --bubble-0:#008571; --bubble-1:#a52019; --bubble-2:#80643f; --bubble-3:#861a22; --bubble-4:#1b5e46;
+  --bubble-5:#c5a059; --bubble-6:#2e8b67; --bubble-7:#9b111e; --bubble-8:#34785c; --bubble-9:#a58348;
 }
 
 /* 9. Light (Crisp High-Contrast Clean Slate) */
@@ -137,6 +155,8 @@
   --rel-structure:#0284C7; --rel-dependency:#D97706; --rel-contract:#059669; --rel-association:#7C3AED;
   --amber:#D97706; --red:#DC2626;
   --edge:#94A3B8; --canvas:#FFFFFF;
+  --bubble-0:#0284c7; --bubble-1:#059669; --bubble-2:#4f46e5; --bubble-3:#ea580c; --bubble-4:#0d9488;
+  --bubble-5:#d97706; --bubble-6:#7c3aed; --bubble-7:#e11d48; --bubble-8:#2563eb; --bubble-9:#16a34a;
 }
 
 /* 10. Nord Light (Snow Storm & Frost) */
@@ -151,6 +171,8 @@
   --rel-structure:#5E81AC; --rel-dependency:#D08770; --rel-contract:#A3BE8C; --rel-association:#B48EAD;
   --amber:#D08770; --red:#BF616A;
   --edge:#88C0D0; --canvas:#ECEFF4;
+  --bubble-0:#5e81ac; --bubble-1:#88c0d0; --bubble-2:#a3be8c; --bubble-3:#d08770; --bubble-4:#81a1c1;
+  --bubble-5:#ebcb8b; --bubble-6:#b48ead; --bubble-7:#bf616a; --bubble-8:#4c566a; --bubble-9:#2e3440;
 }
 
 /* 11. Solarized Light (Precision Warm Paper) */
@@ -165,6 +187,8 @@
   --rel-structure:#268BD2; --rel-dependency:#B58900; --rel-contract:#859900; --rel-association:#6C71C4;
   --amber:#B58900; --red:#DC322F;
   --edge:#93A1A1; --canvas:#FDF6E3;
+  --bubble-0:#268bd2; --bubble-1:#2aa198; --bubble-2:#859900; --bubble-3:#b58900; --bubble-4:#cb4b16;
+  --bubble-5:#dc322f; --bubble-6:#d33682; --bubble-7:#6c71c4; --bubble-8:#586e75; --bubble-9:#1b7a73;
 }
 
 /* 12. GitHub Light (Primer Clean Workspace) */
@@ -179,6 +203,8 @@
   --rel-structure:#0969DA; --rel-dependency:#9A6700; --rel-contract:#1A7F37; --rel-association:#8250DF;
   --amber:#9A6700; --red:#CF222E;
   --edge:#AFB8C1; --canvas:#FFFFFF;
+  --bubble-0:#0969da; --bubble-1:#1a7f37; --bubble-2:#8250df; --bubble-3:#bc4c00; --bubble-4:#1b7c83;
+  --bubble-5:#cf222e; --bubble-6:#9a6700; --bubble-7:#bf3989; --bubble-8:#3a49a8; --bubble-9:#54aeff;
 }
 
 /* 13. Sepia (Warm Editorial Parchment) */
@@ -193,6 +219,8 @@
   --rel-structure:#0369A1; --rel-dependency:#B45309; --rel-contract:#15803D; --rel-association:#4338CA;
   --amber:#B45309; --red:#B91C1C;
   --edge:#B8A88E; --canvas:#F4ECD8;
+  --bubble-0:#b45309; --bubble-1:#78350f; --bubble-2:#c2410c; --bubble-3:#656c38; --bubble-4:#d97706;
+  --bubble-5:#92400e; --bubble-6:#831843; --bubble-7:#365314; --bubble-8:#991b1b; --bubble-9:#a16207;
 }
 
 *{box-sizing:border-box}
@@ -235,6 +263,23 @@ button:focus-visible,input:focus-visible,.tree-row:focus-visible{outline:2px sol
 
 .stage{display:flex;flex:1;min-height:0;background:var(--canvas)}
 .canvas-wrap{position:relative;flex:1;min-width:0}
+.theme-watermark{
+  position:absolute;
+  bottom:20px;
+  right:60px;
+  width:130px;
+  height:130px;
+  pointer-events:none;
+  z-index:2;
+  opacity:0.20;
+  transition:opacity .35s ease, transform .35s ease;
+  user-select:none;
+}
+.theme-watermark svg{
+  width:100%;
+  height:100%;
+  display:block;
+}
 .graph{display:block;width:100%;height:100%;cursor:grab;position:relative}
 .graph:active{cursor:grabbing}
 

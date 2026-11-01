@@ -13,6 +13,7 @@ import { GraphView } from "./graph.js";
 import { renderDetail } from "./detail.js";
 import { renderOutline } from "./tree.js";
 import { TreePicker } from "./picker.js";
+import { renderThemeWatermark } from "./watermark.js";
 
 type Tab = "context" | "code" | "outline";
 type CanvasBase = "galaxy" | "sankey" | "fishbone" | "wheel";
@@ -872,6 +873,10 @@ function applyTheme(name: string): void {
     themeSelect.value = validTheme;
   }
   updateThemeButton(validTheme);
+  const watermarkEl = $("themeWatermark");
+  if (watermarkEl) {
+    watermarkEl.innerHTML = renderThemeWatermark(validTheme);
+  }
   view.restyle();
   renderChips();
   renderLegend();
