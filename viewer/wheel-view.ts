@@ -1,4 +1,5 @@
 import { classifyArtifactStage, type ArtifactStage } from "./sankey-engine.js";
+import { cvar, isLightTheme } from "./data.js";
 
 export type WheelStage = ArtifactStage;
 export type WheelDepth = "module" | "file" | "symbol";
@@ -68,6 +69,10 @@ const STAGE_CONFIG: Record<WheelStage, { title: string; color: string; order: nu
   docs: { title: "Docs", color: "#ec4899", order: 4 },
 };
 
+export function getWheelStageColor(stage: WheelStage): string {
+  return cvar(`--stage-${stage}`) || STAGE_CONFIG[stage]?.color || "#38bdf8";
+}
+
 const RELATION_COLORS: Record<string, string> = {
   structure: "#38bdf8",
   dependency: "#fbbf24",
@@ -75,13 +80,17 @@ const RELATION_COLORS: Record<string, string> = {
   association: "#ec4899",
 };
 
+export function getWheelRelColor(fam: string): string {
+  return cvar(`--rel-${fam}`) || RELATION_COLORS[fam] || "#94a3b8";
+}
+
 export function relationFamilyColor(rel?: string): string {
-  if (!rel) return "#94a3b8";
+  if (!rel) return cvar("--edge") || "#94a3b8";
   const r = rel.toLowerCase();
-  if (r === "part_of" || r === "contains") return RELATION_COLORS.structure;
-  if (r === "implements" || r === "extends" || r === "covers") return RELATION_COLORS.contract;
-  if (r === "governs" || r === "documents" || r === "references") return RELATION_COLORS.association;
-  return RELATION_COLORS.dependency;
+  if (r === "part_of" || r === "contains") return getWheelRelColor("structure");
+  if (r === "implements" || r === "extends" || r === "covers") return getWheelRelColor("contract");
+  if (r === "governs" || r === "documents" || r === "references") return getWheelRelColor("association");
+  return getWheelRelColor("dependency");
 }
 
 export function moduleKeyOfNode(n: { id: string; sources?: string[] }): string {
@@ -305,7 +314,7 @@ export function computeWheelModel(
     sectors.push({
       stage,
       title: meta.title,
-      color: meta.color,
+      color: getWheelStageColor(stage),
       startAngle,
       endAngle,
       nodes: bucket,
@@ -503,6 +512,7 @@ export class WheelView {
     });
 
     const activeId = this.hoveredNodeId || this.selectedNodeId;
+    const isLight = isLightTheme();
 
     let html = `
       <div class="wheel-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg);">
@@ -533,9 +543,9 @@ export class WheelView {
         </div>
         <svg class="wheel-svg" width="100%" height="100%" viewBox="0 0 ${w} ${h}" style="display:block; cursor:grab;">
           <defs>
-            <filter id="chordGlow" x="-20%" y="-20%" width="140%" height="140%">
+            ${!isLight ? `<filter id="chordGlow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="rgba(56, 189, 248, 0.65)" />
-            </filter>
+            </filter>` : ""}
           </defs>
           <g class="wheel-stage" transform="translate(${this.panX}, ${this.panY}) scale(${this.zoom})">
             
@@ -553,11 +563,12 @@ export class WheelView {
       const cls = activeId ? (isConnected ? "wheel-chord chord-illuminated" : "wheel-chord chord-dimmed") : "wheel-chord";
       const opacity = activeId ? (isConnected ? "0.92" : "0.05") : "0.32";
       const baseWidth = Math.min(8, Math.max(1.2, 1.2 + Math.sqrt(chord.weight) * 0.8));
-      const strokeWidth = isConnected && activeId ? (baseWidth * 1.5).toFixed(1) : baseWidth.toFixed(1);
-      const filter = isConnected && activeId ? 'filter="url(#chordGlow)"' : "";
+      const strokeWidth = isConnected && activeId ? (isLight ? (baseWidth * 1.8).toFixed(1) : (baseWidth * 1.5).toFixed(1)) : baseWidth.toFixed(1);
+      const filter = (!isLight && isConnected && activeId) ? 'filter="url(#chordGlow)"' : "";
+      const chordStyle = isLight ? "mix-blend-mode:multiply; transition:opacity 0.15s ease;" : "transition:opacity 0.15s ease;";
 
       html += `
-        <path d="${chord.pathD}" fill="none" stroke="${chord.color}" stroke-width="${strokeWidth}" opacity="${opacity}" class="${cls}" data-source="${chord.sourceNode.id}" data-target="${chord.targetNode.id}" ${filter} style="transition:opacity 0.15s ease;"><title>${chord.sourceNode.name || chord.sourceNode.id} → ${chord.targetNode.name || chord.targetNode.id} (${chord.weight} connection${chord.weight === 1 ? "" : "s"}${chord.bundled ? " · bundled" : ""})</title></path>
+        <path d="${chord.pathD}" fill="none" stroke="${chord.color}" stroke-width="${strokeWidth}" opacity="${opacity}" class="${cls}" data-source="${chord.sourceNode.id}" data-target="${chord.targetNode.id}" ${filter} style="${chordStyle}"><title>${chord.sourceNode.name || chord.sourceNode.id} → ${chord.targetNode.name || chord.targetNode.id} (${chord.weight} connection${chord.weight === 1 ? "" : "s"}${chord.bundled ? " · bundled" : ""})</title></path>
       `;
     }
 

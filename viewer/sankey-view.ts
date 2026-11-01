@@ -14,6 +14,7 @@ import {
   computeSankeyColumns,
   orderBarsByBarycenter,
 } from "./sankey-engine.js";
+import { cvar, isLightTheme } from "./data.js";
 
 const STAGE_META: Record<ArtifactStage, { title: string; subtitle: string; color: string }> = {
   adrs: { title: "1. ADRs", subtitle: "Architecture Decisions", color: "#a855f7" },
@@ -22,6 +23,10 @@ const STAGE_META: Record<ArtifactStage, { title: string; subtitle: string; color
   tests: { title: "4. Tests", subtitle: "Verification Suites", color: "#f59e0b" },
   docs: { title: "5. Docs", subtitle: "Guides & References", color: "#ec4899" },
 };
+
+export function getStageColor(stage: ArtifactStage): string {
+  return cvar(`--stage-${stage}`) || STAGE_META[stage]?.color || "#38bdf8";
+}
 
 export interface LayoutBar extends SankeyBar {
   baseX: number;
@@ -603,7 +608,7 @@ export class SankeyView {
           y: curY + colOff.dy + barOff.dy,
           w: colWidth,
           h,
-          color: meta.color,
+          color: getStageColor(stage),
           inLineage,
           minHop,
           maxEnergy,
@@ -744,18 +749,21 @@ export class SankeyView {
     };
 
     const initialRibbonPaths = computeAllRibbonPaths();
+    const isLight = isLightTheme();
 
     let svgDefs = `<defs>
-      <filter id="sankey-glow" x="-20%" y="-20%" width="140%" height="140%">
+      ${!isLight ? `<filter id="sankey-glow" x="-20%" y="-20%" width="140%" height="140%">
         <feGaussianBlur stdDeviation="3.5" result="blur"/>
         <feMerge>
           <feMergeNode in="blur"/>
           <feMergeNode in="SourceGraphic"/>
         </feMerge>
-      </filter>`;
+      </filter>` : ""}`;
     for (const sA of STAGE_ORDER) {
       for (const sB of STAGE_ORDER) {
-        svgDefs += `<linearGradient id="sankey-grad-${sA}-${sB}" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${STAGE_META[sA].color}"/><stop offset="100%" stop-color="${STAGE_META[sB].color}"/></linearGradient>`;
+        const colA = getStageColor(sA);
+        const colB = getStageColor(sB);
+        svgDefs += `<linearGradient id="sankey-grad-${sA}-${sB}" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${colA}"/><stop offset="100%" stop-color="${colB}"/></linearGradient>`;
       }
     }
     svgDefs += "</defs>";
@@ -784,18 +792,20 @@ export class SankeyView {
           ? Number((0.32 + 0.65 * ribbonEnergy).toFixed(2))
           : 0.28;
       const gradId = `sankey-grad-${src.stage}-${tgt.stage}`;
-      const filterAttr = isActiveBlast && ribbonEnergy >= 0.7 ? ` filter="url(#sankey-glow)"` : "";
+      const filterAttr = (!isLight && isActiveBlast && ribbonEnergy >= 0.7) ? ` filter="url(#sankey-glow)"` : "";
+      const ribbonStyle = isLight ? "mix-blend-mode:multiply;" : "";
 
-      svgRibbons += `<path class="sankey-ribbon" data-ribbon-key="${this.esc(rKey)}" data-src="${this.esc(src.id)}" data-tgt="${this.esc(tgt.id)}" d="${d}" fill="none" stroke="url(#${gradId})" stroke-width="${strokeW.toFixed(1)}" stroke-linecap="round" opacity="${opacity}"${filterAttr}><title>${this.esc(src.label)} → ${this.esc(tgt.label)} (${r.weight} links${isActiveBlast ? ` · ${Math.round(ribbonEnergy * 100)}% blast energy` : ""})</title></path>`;
+      svgRibbons += `<path class="sankey-ribbon" data-ribbon-key="${this.esc(rKey)}" data-src="${this.esc(src.id)}" data-tgt="${this.esc(tgt.id)}" d="${d}" fill="none" stroke="url(#${gradId})" stroke-width="${strokeW.toFixed(1)}" stroke-linecap="round" opacity="${opacity}"${filterAttr} style="${ribbonStyle}"><title>${this.esc(src.label)} → ${this.esc(tgt.label)} (${r.weight} links${isActiveBlast ? ` · ${Math.round(ribbonEnergy * 100)}% blast energy` : ""})</title></path>`;
     }
 
     let svgColumns = "";
     for (const col of stageColumns) {
       const meta = STAGE_META[col.stage];
+      const metaColor = getStageColor(col.stage);
       svgColumns += `<g class="sankey-col" data-stage="${col.stage}">`;
       svgColumns += `<g class="sankey-col-header" data-stage="${col.stage}" transform="translate(${col.x}, ${col.headerY})" style="cursor:grab;">`;
-      svgColumns += `<rect x="0" y="0" width="${colWidth}" height="46" rx="7" fill="var(--panel, #15181b)" stroke="${meta.color}66" stroke-width="1.2"/>`;
-      svgColumns += `<text x="10" y="19" fill="${meta.color}" font-size="12" font-weight="700">⠿ ${this.esc(meta.title)}</text>`;
+      svgColumns += `<rect x="0" y="0" width="${colWidth}" height="46" rx="7" fill="var(--panel, #15181b)" stroke="${metaColor}66" stroke-width="1.2"/>`;
+      svgColumns += `<text x="10" y="19" fill="${metaColor}" font-size="12" font-weight="700">⠿ ${this.esc(meta.title)}</text>`;
       svgColumns += `<text x="${colWidth - 10}" y="19" text-anchor="end" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="600">${col.total}</text>`;
       svgColumns += `<text x="10" y="36" fill="var(--muted, #8b9298)" font-size="10">${this.esc(meta.subtitle)}</text>`;
       svgColumns += `<title>Drag header to reposition the ${this.esc(meta.title)} column</title>`;
@@ -819,32 +829,32 @@ export class SankeyView {
               ? Number((0.55 + 0.45 * b.maxEnergy).toFixed(2))
               : 0.82;
         const strokeColor = b.hasGap
-          ? "#ef4444"
+          ? "var(--red, #ef4444)"
           : isSeed
             ? "var(--accent, #38bdf8)"
             : isAffected && b.minHop === 1
               ? "var(--amber, #fde047)"
-              : meta.color;
-        const strokeW = isSeed ? 2.6 : isAffected ? Number((1.2 + 1.2 * b.maxEnergy).toFixed(1)) : b.hasGap ? 2.0 : 1.0;
-        const glowAttr = isSeed || (isAffected && b.maxEnergy >= 0.78) ? ` filter="url(#sankey-glow)"` : "";
+              : metaColor;
+        const strokeW = isSeed ? (isLight ? 2.8 : 2.6) : isAffected ? Number((1.2 + 1.2 * b.maxEnergy).toFixed(1)) : b.hasGap ? 2.0 : 1.0;
+        const glowAttr = (!isLight && (isSeed || (isAffected && b.maxEnergy >= 0.78))) ? ` filter="url(#sankey-glow)"` : "";
 
         const maxChars = Math.max(10, Math.floor((colWidth - 46) / 6.2));
         const rawLabel = b.isGroup ? `📁 ${b.label}` : b.label;
         const shortLabel = rawLabel.length > maxChars ? rawLabel.slice(0, maxChars - 1) + "…" : rawLabel;
 
         let badgeText = "";
-        let badgeColor = meta.color;
+        let badgeColor = metaColor;
         if (isSeed) {
           badgeText = "⚡ SEED";
-          badgeColor = "#fde047";
+          badgeColor = "var(--amber, #fde047)";
         } else if (isAffected) {
           badgeText = `${b.minHop}h · ${Math.round(b.maxEnergy * 100)}%`;
-          badgeColor = b.minHop === 1 ? "#fde047" : meta.color;
+          badgeColor = b.minHop === 1 ? "var(--amber, #fde047)" : metaColor;
         } else if (b.isGroup) {
           badgeText = `${b.memberCount}`;
         } else if (b.hasGap) {
           badgeText = "⚠ 0 tests";
-          badgeColor = "#f87171";
+          badgeColor = "var(--red, #f87171)";
         }
 
         const dirOrNodeKey = b.isGroup && b.id.startsWith("dir:") ? b.id.split(":").slice(2).join(":") : b.id;
@@ -852,13 +862,13 @@ export class SankeyView {
 
         const chevronHitW = 24;
         svgColumns += `<g class="sankey-bar" data-bar-id="${this.esc(b.id)}" data-dir-key="${this.esc(dirOrNodeKey)}" data-stage="${col.stage}" data-is-group="${b.isGroup ? "1" : "0"}" data-first-node="${this.esc(b.memberIds[0] || "")}" transform="translate(${b.x}, ${b.y})" opacity="${fillOpacity}">`;
-        svgColumns += `<rect class="sankey-bar-bg" x="0" y="0" width="${b.w}" height="${b.h}" rx="5" fill="${isSeed ? `${meta.color}33` : "var(--panel, #181c20)"}" stroke="${strokeColor}" stroke-width="${strokeW}"${glowAttr}/>`;
-        svgColumns += `<rect class="sankey-bar-stripe" x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "var(--amber, #fde047)" : meta.color}"/>`;
+        svgColumns += `<rect class="sankey-bar-bg" x="0" y="0" width="${b.w}" height="${b.h}" rx="5" fill="${isSeed ? `${metaColor}25` : "var(--panel, #181c20)"}" stroke="${strokeColor}" stroke-width="${strokeW}"${glowAttr}/>`;
+        svgColumns += `<rect class="sankey-bar-stripe" x="0" y="0" width="${isSeed ? 7 : 5}" height="${b.h}" rx="2" fill="${isSeed ? "var(--amber, #fde047)" : metaColor}"/>`;
 
         if (b.isGroup) {
           svgColumns += `<g class="sankey-chevron-hit" data-bar-id="${this.esc(b.id)}" title="${isExpanded ? "Collapse folder" : "Expand folder"}">`;
           svgColumns += `<rect x="2" y="2" width="${chevronHitW}" height="${Math.max(14, b.h - 4)}" rx="3" fill="transparent"/>`;
-          svgColumns += `<text class="sankey-chevron" data-bar-id="${this.esc(b.id)}" x="10" y="${Math.min(b.h / 2 + 4, 18)}" fill="${meta.color}" font-size="11" font-weight="700">${isExpanded ? "▾" : "▸"}</text>`;
+          svgColumns += `<text class="sankey-chevron" data-bar-id="${this.esc(b.id)}" x="10" y="${Math.min(b.h / 2 + 4, 18)}" fill="${metaColor}" font-size="11" font-weight="700">${isExpanded ? "▾" : "▸"}</text>`;
           svgColumns += `</g>`;
           svgColumns += `<text x="${chevronHitW + 4}" y="${Math.min(b.h / 2 + 4, 18)}" fill="var(--ink, #e7e9ea)" font-size="11" font-weight="700">${this.esc(shortLabel)}</text>`;
         } else {

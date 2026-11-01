@@ -25,22 +25,28 @@ test("colorToken returns scope-specific tokens for docs, specs, and code", () =>
   assert.equal(colorToken("context", "concept"), "--con");
 });
 
-test("viewer style defines all 9 themes with required palette tokens", async () => {
+test("viewer style defines all 13 themes with required palette tokens", async () => {
   const fs = await import("node:fs");
   const path = await import("node:path");
   const css = fs.readFileSync(path.resolve("viewer/style.css"), "utf-8");
   const html = fs.readFileSync(path.resolve("viewer/index.html"), "utf-8");
 
   const expectedThemes = [
+    // Dark themes
     "dark",
-    "light",
     "tokyonight",
+    "synthwave",
+    "cyberpunk",
     "spring",
     "summer",
     "autumn",
     "christmas",
-    "synthwave",
-    "cyberpunk",
+    // Light themes
+    "light",
+    "nord-light",
+    "solarized-light",
+    "github-light",
+    "sepia",
   ];
 
   for (const theme of expectedThemes) {
@@ -55,7 +61,7 @@ test("viewer style defines all 9 themes with required palette tokens", async () 
     );
   }
 
-  // Verify essential CSS tokens exist
+  // Verify essential CSS tokens and document stage tokens exist
   const essentialTokens = [
     "--bg",
     "--panel",
@@ -65,6 +71,15 @@ test("viewer style defines all 9 themes with required palette tokens", async () 
     "--muted",
     "--accent",
     "--edge",
+    "--stage-adrs",
+    "--stage-features",
+    "--stage-code",
+    "--stage-tests",
+    "--stage-docs",
+    "--rel-structure",
+    "--rel-dependency",
+    "--rel-contract",
+    "--rel-association",
   ];
   for (const token of essentialTokens) {
     assert.ok(css.includes(`${token}:`), `Token ${token} must be defined in style.css`);

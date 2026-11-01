@@ -870,9 +870,19 @@ export const RELATION_COLORS: Record<string, string> = {
   references: RELATIONS.references.color,
 };
 
-/** Returns display color for a relation verb. */
+function getCssVar(name: string): string {
+  if (typeof document !== "undefined" && typeof getComputedStyle !== "undefined") {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  return "";
+}
+
+/** Returns display color for a relation verb, adapting dynamically to the active theme. */
 export function relationColor(rel: string): string {
   const key = chipKey(rel);
+  const fam = famOf(rel);
+  const themeRel = getCssVar(`--rel-${key.replace(/\s+/g, "_")}`) || getCssVar(`--rel-${fam}`);
+  if (themeRel) return themeRel;
   return RELATION_COLORS[key] ?? RELATION_COLORS[rel] ?? RELATIONS[normalizeRelation(rel)]?.color ?? "#71828a";
 }
 

@@ -816,14 +816,18 @@ $("zreset").addEventListener("click", () => view.resetView());
 const THEME_KEY = "graft-viz-theme";
 const ALL_THEMES = [
   "dark",
-  "light",
   "tokyonight",
+  "synthwave",
+  "cyberpunk",
   "spring",
   "summer",
   "autumn",
   "christmas",
-  "synthwave",
-  "cyberpunk",
+  "light",
+  "nord-light",
+  "solarized-light",
+  "github-light",
+  "sepia",
 ] as const;
 type ThemeName = typeof ALL_THEMES[number];
 

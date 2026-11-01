@@ -198,26 +198,46 @@ export function colorToken(
   return m[type] ?? "--edge";
 }
 
+export function isLightTheme(): boolean {
+  if (typeof document === "undefined" || !document?.documentElement?.getAttribute) return false;
+  const theme = document.documentElement.getAttribute("data-theme") || "";
+  return ["light", "nord-light", "solarized-light", "github-light", "sepia"].includes(theme);
+}
+
 export function cvar(name: string): string {
-  if (typeof getComputedStyle === "undefined" || typeof document === "undefined") {
-    const defaults: Record<string, string> = {
-      "--ink": "#E7E9EA",
-      "--panel": "#15181B",
-      "--panel2": "#1c2125",
-      "--chip": "#1C2125",
-      "--muted": "#8B9298",
-      "--edge": "#3b4d54",
-      "--amber": "#fbbf24",
-      "--accent": "#38bdf8",
-      "--adrs": "#ec4899",
-      "--features": "#10b981",
-      "--code": "#38bdf8",
-      "--tests": "#10b981",
-      "--docs": "#a855f7",
-    };
+  const defaults: Record<string, string> = {
+    "--ink": "#E7E9EA",
+    "--panel": "#15181B",
+    "--panel2": "#1c2125",
+    "--chip": "#1C2125",
+    "--muted": "#8B9298",
+    "--edge": "#3b4d54",
+    "--amber": "#fbbf24",
+    "--accent": "#38bdf8",
+    "--adrs": "#ec4899",
+    "--features": "#10b981",
+    "--code": "#38bdf8",
+    "--tests": "#10b981",
+    "--docs": "#a855f7",
+    "--scope-code": "#38bdf8",
+    "--scope-docs": "#a855f7",
+    "--scope-specs": "#10b981",
+    "--scope-transitive": "#fbbf24",
+    "--stage-adrs": "#a855f7",
+    "--stage-features": "#10b981",
+    "--stage-code": "#38bdf8",
+    "--stage-tests": "#f59e0b",
+    "--stage-docs": "#ec4899",
+    "--rel-structure": "#38bdf8",
+    "--rel-dependency": "#fbbf24",
+    "--rel-contract": "#10b981",
+    "--rel-association": "#ec4899",
+  };
+  if (typeof getComputedStyle === "undefined" || typeof document === "undefined" || !document?.documentElement) {
     return defaults[name] ?? "#888888";
   }
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return val || defaults[name] || "#888888";
 }
 
 /**
@@ -548,7 +568,7 @@ export function synthesizeDirectoryTree(graph: VizGraph): VizGraph {
   };
 }
 
-/** High-contrast subsystem galaxy palette for aggregated file containers. */
+/** High-contrast subsystem galaxy palette for aggregated file containers (Dark). */
 export const GALAXY_PALETTE = [
   "#38bdf8", // Sky Blue
   "#fb923c", // Tangerine
@@ -562,18 +582,37 @@ export const GALAXY_PALETTE = [
   "#a3e635", // Lime
 ];
 
+/** Rich, deeply-saturated subsystem galaxy palette for aggregated file containers (Light). */
+export const LIGHT_GALAXY_PALETTE = [
+  "#0284c7", // Sky 600
+  "#ea580c", // Orange 600
+  "#4f46e5", // Indigo 600
+  "#db2777", // Pink 600
+  "#0d9488", // Teal 600
+  "#d97706", // Amber 600
+  "#7c3aed", // Violet 600
+  "#e11d48", // Rose 600
+  "#2563eb", // Blue 600
+  "#16a34a", // Green 600
+];
+
 /**
  * Deterministically maps a subsystem cluster key to a distinct galaxy color,
- * while preserving canonical tripartite colors for specs (emerald) and docs (violet).
+ * while preserving canonical tripartite colors for specs and docs, dynamically adapting to light/dark themes.
  */
 export function galaxyColorOfCluster(clusterKey: string, scope: string): string {
-  if (scope === "specs" || clusterKey.startsWith("features")) return "#10b981";
-  if (scope === "docs" || clusterKey.startsWith("docs")) return "#a855f7";
+  if (scope === "specs" || clusterKey.startsWith("features")) {
+    return cvar("--scope-specs") || (isLightTheme() ? "#059669" : "#10b981");
+  }
+  if (scope === "docs" || clusterKey.startsWith("docs")) {
+    return cvar("--scope-docs") || (isLightTheme() ? "#7c3aed" : "#a855f7");
+  }
   let hash = 0;
   for (let i = 0; i < clusterKey.length; i++) {
     hash = (hash * 31 + clusterKey.charCodeAt(i)) >>> 0;
   }
-  return GALAXY_PALETTE[hash % GALAXY_PALETTE.length];
+  const palette = isLightTheme() ? LIGHT_GALAXY_PALETTE : GALAXY_PALETTE;
+  return palette[hash % palette.length];
 }
 
 export type EdgeContractionMode = "coupled" | "code" | "spec" | "doc" | "directory";

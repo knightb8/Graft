@@ -1336,9 +1336,12 @@ export class GraphView {
       labelVisibility = "visible";
     }
 
-    let color = data.color || "#38bdf8";
+    const isAggregatedParent = this.tab === "code" && this.aggregateToParent && (node.type === "file" || node.type === "module");
+    let color = isAggregatedParent
+      ? galaxyColorOfCluster(node.clusterKey || "root", node.scope)
+      : (cvar(colorToken(this.tab, node.type, node.scope)) || data.color || this.themeColors.accent);
     if (isCircletraceReflected) {
-      color = "#fbbf24";
+      color = this.themeColors.amber;
     }
 
     return {
@@ -1446,7 +1449,7 @@ export class GraphView {
 
     if (isFocused || isReflected) {
       if (isReflected) {
-        color = "#fbbf24";
+        color = this.themeColors.amber;
       } else if (role === "out") {
         color = this.rainbowEdges ? relColor : this.themeColors.amber;
       } else if (role === "in") {
@@ -1507,6 +1510,27 @@ export class GraphView {
   /** Re-apply all style attributes (theme, filters, focus, search). */
   restyle(): void {
     this.refreshThemeColors();
+
+    const tokenColorCache = new Map<string, string>();
+    const resolveTokenColor = (token: string) => {
+      let cached = tokenColorCache.get(token);
+      if (cached === undefined) {
+        cached = cvar(token);
+        tokenColorCache.set(token, cached);
+      }
+      return cached;
+    };
+
+    for (const node of this.nodes) {
+      const isAggregatedParent = this.tab === "code" && this.aggregateToParent && (node.type === "file" || node.type === "module");
+      const color = isAggregatedParent
+        ? galaxyColorOfCluster(node.clusterKey || "root", node.scope)
+        : (resolveTokenColor(colorToken(this.tab, node.type, node.scope)) || this.themeColors.accent);
+      if (this.graph.hasNode(node.id)) {
+        this.graph.setNodeAttribute(node.id, "color", color);
+      }
+    }
+
     let visCount = 0;
     let maxD = 0;
     const visibleNodes: SimNode[] = [];

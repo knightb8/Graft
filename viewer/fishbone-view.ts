@@ -1,4 +1,5 @@
 import { classifyArtifactStage, type ArtifactStage } from "./sankey-engine.js";
+import { cvar, isLightTheme } from "./data.js";
 
 export type FishboneStage = ArtifactStage;
 
@@ -68,6 +69,10 @@ const STAGE_META: Record<FishboneStage, { title: string; color: string; defaultS
   tests: { title: "Tests & Verification", color: "#38bdf8", defaultSide: "bottom" },
   docs: { title: "Documentation & Guides", color: "#ec4899", defaultSide: "bottom" },
 };
+
+export function getFishboneStageColor(stage: FishboneStage): string {
+  return cvar(`--stage-${stage}`) || STAGE_META[stage]?.color || "#38bdf8";
+}
 
 /**
  * Computes an Ishikawa Fishbone geometric layout model around a focal head node.
@@ -214,7 +219,7 @@ export function computeFishboneModel(
     ribs.push({
       stage,
       title: meta.title,
-      color: meta.color,
+      color: getFishboneStageColor(stage),
       side: "top",
       junctionX: jx,
       junctionY: jy,
@@ -263,7 +268,7 @@ export function computeFishboneModel(
     ribs.push({
       stage,
       title: meta.title,
-      color: meta.color,
+      color: getFishboneStageColor(stage),
       side: "bottom",
       junctionX: jx,
       junctionY: jy,
@@ -300,7 +305,7 @@ export function computeFishboneModel(
       y: headY,
       width: headWidth,
       height: headHeight,
-      color: STAGE_META[headStage]?.color || "#38bdf8",
+      color: getFishboneStageColor(headStage),
     },
     spine: {
       x1: spineStartX,
@@ -397,6 +402,7 @@ export class FishboneView {
     const maxTipOffset = Math.max(200, ...model.ribs.map((r) => Math.abs(r.tipY - (h / 2))));
     const svgHeight = Math.max(h, Math.round((h / 2) + maxTipOffset + 90));
 
+    const isLight = isLightTheme();
     let html = `
       <div class="fishbone-wrap" style="position:relative; width:100%; height:100%; overflow:hidden; user-select:none; background:var(--bg);">
         <div class="fishbone-toolbar" style="position:absolute; top:12px; right:16px; z-index:10; display:flex; gap:8px;">
@@ -405,11 +411,11 @@ export class FishboneView {
         <svg class="fishbone-svg" width="100%" height="100%" viewBox="0 0 ${svgWidth} ${svgHeight}" style="display:block; cursor:grab;">
           <defs>
             <linearGradient id="fishHeadGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="${model.head.color}" stop-opacity="0.32" />
+              <stop offset="0%" stop-color="${model.head.color}" stop-opacity="${isLight ? "0.18" : "0.32"}" />
               <stop offset="100%" stop-color="var(--panel, #15181b)" stop-opacity="0.85" />
             </linearGradient>
             <filter id="boneGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.45)" />
+              <feDropShadow dx="0" dy="1" stdDeviation="${isLight ? "1.5" : "3"}" flood-color="${isLight ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.45)"}" />
             </filter>
           </defs>
           <g class="fishbone-stage" transform="translate(${this.panX}, ${this.panY}) scale(${this.zoom})">
