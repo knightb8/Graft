@@ -44,6 +44,7 @@ export interface MinimapProjection {
   width: number;
   height: number;
   padding: number;
+  invertY?: boolean;
   worldBounds: { minX: number; maxX: number; minY: number; maxY: number };
   scale: number;
   offsetX: number;
@@ -75,6 +76,7 @@ export interface MinimapOverlayOptions {
   width?: number;
   height?: number;
   padding?: number;
+  invertY?: boolean;
   className?: string;
   onPanTo?: (worldX: number, worldY: number, panX: number, panY: number) => void;
 }
@@ -95,11 +97,14 @@ export function computeMinimapProjection(
     zoom: number;
     viewportWidth: number;
     viewportHeight: number;
+    invertY?: boolean;
   },
   width = 160,
   height = 110,
   padding = 10,
 ): MinimapProjection {
+  const invertY = Boolean(camera.invertY);
+  const ySign = invertY ? -1 : 1;
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -143,12 +148,12 @@ export function computeMinimapProjection(
   const minimapCenterY = height / 2;
 
   const offsetX = minimapCenterX - worldCenterX * scale;
-  const offsetY = minimapCenterY - worldCenterY * scale;
+  const offsetY = minimapCenterY - ySign * worldCenterY * scale;
 
   const points: MinimapProjectedPoint[] = nodes.map((node) => ({
     id: node.id,
     x: node.x * scale + offsetX,
-    y: node.y * scale + offsetY,
+    y: ySign * node.y * scale + offsetY,
     color: node.color,
     radius: node.radius ?? 2.5,
   }));
@@ -162,7 +167,9 @@ export function computeMinimapProjection(
 
   if (camera.cx !== undefined && camera.cy !== undefined) {
     worldLeft = camera.cx - (camera.viewportWidth / 2) / zoom;
-    worldTop = camera.cy - (camera.viewportHeight / 2) / zoom;
+    worldTop = invertY
+      ? camera.cy + (camera.viewportHeight / 2) / zoom
+      : camera.cy - (camera.viewportHeight / 2) / zoom;
   } else {
     const panX = camera.panX ?? 0;
     const panY = camera.panY ?? 0;
@@ -172,7 +179,7 @@ export function computeMinimapProjection(
 
   const viewportRect: MinimapViewportRect = {
     x: worldLeft * scale + offsetX,
-    y: worldTop * scale + offsetY,
+    y: ySign * worldTop * scale + offsetY,
     w: worldWidth * scale,
     h: worldHeight * scale,
   };
@@ -181,6 +188,7 @@ export function computeMinimapProjection(
     width,
     height,
     padding,
+    invertY,
     worldBounds: { minX, maxX, minY, maxY },
     scale,
     offsetX,
@@ -200,13 +208,14 @@ export function minimapPointToWorld(
   projection: MinimapProjection,
   camera?: { zoom: number; viewportWidth: number; viewportHeight: number },
 ): { worldX: number; worldY: number; panX: number; panY: number } {
+  const ySign = projection.invertY ? -1 : 1;
   const worldX = (px - projection.offsetX) / projection.scale;
-  const worldY = (py - projection.offsetY) / projection.scale;
+  const worldY = (py - projection.offsetY) / (ySign * projection.scale);
   const zoom = camera?.zoom ?? 1;
   const vw = camera?.viewportWidth ?? 0;
   const vh = camera?.viewportHeight ?? 0;
   const panX = vw / 2 - worldX * zoom;
-  const panY = vh / 2 - worldY * zoom;
+  const panY = vh / 2 - ySign * worldY * zoom;
 
   return { worldX, worldY, panX, panY };
 }
@@ -322,6 +331,7 @@ export class MinimapOverlay {
   public width: number;
   public height: number;
   public padding: number;
+  public invertY: boolean;
   public projection: MinimapProjection | null = null;
   public cameraState?: {
     cx?: number;
@@ -331,6 +341,7 @@ export class MinimapOverlay {
     zoom: number;
     viewportWidth: number;
     viewportHeight: number;
+    invertY?: boolean;
   };
   public onPanTo?: (worldX: number, worldY: number, panX: number, panY: number) => void;
   public isDragging = false;
@@ -343,6 +354,7 @@ export class MinimapOverlay {
     this.width = options.width ?? 160;
     this.height = options.height ?? 110;
     this.padding = options.padding ?? 10;
+    this.invertY = options.invertY ?? false;
     this.onPanTo = options.onPanTo;
 
     const className = options.className ?? "cosmos-minimap";
@@ -455,10 +467,12 @@ export class MinimapOverlay {
       zoom: number;
       viewportWidth: number;
       viewportHeight: number;
+      invertY?: boolean;
     },
   ): MinimapProjection {
-    this.cameraState = camera;
-    this.projection = computeMinimapProjection(nodes, camera, this.width, this.height, this.padding);
+    const camWithY = { ...camera, invertY: camera.invertY ?? this.invertY };
+    this.cameraState = camWithY;
+    this.projection = computeMinimapProjection(nodes, camWithY, this.width, this.height, this.padding);
     this.render();
     return this.projection;
   }

@@ -777,6 +777,7 @@ export class GraphView {
           width: 156,
           height: 104,
           padding: 8,
+          invertY: true,
           onPanTo: (worldX, worldY) => {
             if (!this.sigma) return;
             try {
@@ -2005,6 +2006,7 @@ export class GraphView {
       zoom,
       viewportWidth: W,
       viewportHeight: H,
+      invertY: true,
     });
   }
 

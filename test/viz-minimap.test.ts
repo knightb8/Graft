@@ -365,3 +365,38 @@ test("Edge cases: handles empty nodes, single node, and degenerate bounds gracef
   assert.deepEqual(isolatedFocus.getNodeFocus("Other"), { hop: null, opacity: 0.10 });
   assert.deepEqual(isolatedFocus.getEdgeFocus("Alone", "Other"), { tier: null, opacity: 0.05, dashed: false });
 });
+
+test("Scenario 1: invertY (WebGL Y-up) projects positive world Y to top of minimap and converts back accurately", () => {
+  const nodes: MinimapPointInput[] = [
+    { id: "TopNode", x: 0, y: 100 },
+    { id: "BottomNode", x: 0, y: -100 },
+  ];
+
+  // Camera centered near top node (cy = 50 in Y-up space)
+  const camera = {
+    cx: 0,
+    cy: 50,
+    zoom: 1.0,
+    viewportWidth: 200,
+    viewportHeight: 100,
+    invertY: true,
+  };
+
+  const projection = computeMinimapProjection(nodes, camera, 160, 110, 10);
+  const topProj = projection.points.find((p) => p.id === "TopNode")!;
+  const bottomProj = projection.points.find((p) => p.id === "BottomNode")!;
+
+  // In 2D canvas (Y-down), TopNode (world +100) must have a SMALLER canvas y than BottomNode (world -100)
+  assert.ok(topProj.y < bottomProj.y, `Expected TopNode.y (${topProj.y}) < BottomNode.y (${bottomProj.y})`);
+  assert.equal(topProj.y, 10);
+  assert.equal(bottomProj.y, 100);
+
+  // Viewport centered at cy = 50 (upper half) should have its center above minimap midpoint (55)
+  const vpCenterY = projection.viewportRect.y + projection.viewportRect.h / 2;
+  assert.ok(vpCenterY < 55, `Expected viewport center Y (${vpCenterY}) < 55`);
+
+  // Clicking on TopNode's canvas coordinate must map back to worldY = +100
+  const backToWorld = minimapPointToWorld(topProj.x, topProj.y, projection, camera);
+  assert.ok(Math.abs(backToWorld.worldX - 0) < 1e-4);
+  assert.ok(Math.abs(backToWorld.worldY - 100) < 1e-4, `Expected worldY ~ 100, got ${backToWorld.worldY}`);
+});
